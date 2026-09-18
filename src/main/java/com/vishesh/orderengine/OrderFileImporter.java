@@ -1,3 +1,10 @@
+package com.vishesh.orderengine;
+
+/*
+ * Spring-discovered file adapter: it reads order rows from a Path and creates
+ * plain Order domain objects. Boot wires this component into the service; the
+ * parsing rules stay ordinary Java.
+ */
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -5,6 +12,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.stereotype.Component;
+
+@Component 
 public class OrderFileImporter {
     List<Order> importOrders(Path inputFile) throws IOException {
         String line;

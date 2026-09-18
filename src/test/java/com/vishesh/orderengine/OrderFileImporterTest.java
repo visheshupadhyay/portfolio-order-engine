@@ -1,5 +1,15 @@
+package com.vishesh.orderengine;
+
+/*
+ * Plain-Java file-importer revision: @TempDir isolates test files, valid orders
+ * import successfully, and invalid rows are skipped safely.
+ */
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import com.vishesh.orderengine.Order;
+import com.vishesh.orderengine.OrderFileImporter;
+import com.vishesh.orderengine.OrderStatus;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

@@ -1,5 +1,9 @@
-// package portfolio-order-engine.src.main.java;
-// import src.main.java.OrderStatus;
+package com.vishesh.orderengine;
+
+/*
+ * A domain object, not a Spring bean. A new Order represents one real order and
+ * owns its own state transition from CREATED to PAID.
+ */
 public class Order {
     private final String id;
     private OrderStatus status;

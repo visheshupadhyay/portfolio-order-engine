@@ -1,4 +1,13 @@
+package com.vishesh.orderengine;
+
+/*
+ * Domain-model revision: an Order starts CREATED, may become PAID once, and
+ * rejects invalid IDs. It is plain Java rather than a Spring-managed bean.
+ */
 import org.junit.jupiter.api.Test;
+
+import com.vishesh.orderengine.Order;
+import com.vishesh.orderengine.OrderStatus;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

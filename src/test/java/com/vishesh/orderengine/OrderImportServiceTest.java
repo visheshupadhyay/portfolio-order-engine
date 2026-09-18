@@ -1,5 +1,16 @@
+package com.vishesh.orderengine;
+
+/*
+ * Plain-Java orchestration revision: OrderImportService coordinates an importer
+ * and repository supplied through constructor injection.
+ */
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import com.vishesh.orderengine.InMemoryOrderRepository;
+import com.vishesh.orderengine.OrderFileImporter;
+import com.vishesh.orderengine.OrderImportService;
+import com.vishesh.orderengine.OrderStatus;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
