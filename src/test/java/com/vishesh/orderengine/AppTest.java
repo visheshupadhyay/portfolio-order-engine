@@ -6,8 +6,6 @@ package com.vishesh.orderengine;
  */
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.App;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class AppTest {

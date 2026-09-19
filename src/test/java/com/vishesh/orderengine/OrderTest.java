@@ -6,9 +6,6 @@ package com.vishesh.orderengine;
  */
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.Order;
-import com.vishesh.orderengine.OrderStatus;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 

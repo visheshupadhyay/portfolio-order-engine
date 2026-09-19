@@ -9,8 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.NotificationTaskQueue;
-
 public class NotificationTaskQueueTest {
     @Test
     public void takesTasksInFirstInFirstOutOrder() throws InterruptedException {

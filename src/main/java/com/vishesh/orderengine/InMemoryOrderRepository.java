@@ -1,11 +1,13 @@
 package com.vishesh.orderengine;
 
+import java.util.ArrayList;
 /*
  * Spring-discovered repository implementation used for learning. It stores
  * orders in memory behind the OrderRepository contract and can later be
  * replaced by a database-backed implementation.
  */
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -27,5 +29,11 @@ public class InMemoryOrderRepository implements OrderRepository {
             return Optional.empty();
         }
         return Optional.of(map.get(orderId));
+    }
+
+    @Override
+    public List<Order> findAll() {
+        // Return a snapshot so callers cannot mutate the repository's map through the list.
+        return new ArrayList<>(this.map.values());
     }
 }
