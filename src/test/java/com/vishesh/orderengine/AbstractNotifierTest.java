@@ -7,7 +7,6 @@ package com.vishesh.orderengine;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.EmailNotifier;
 
 public class AbstractNotifierTest {
     @Test

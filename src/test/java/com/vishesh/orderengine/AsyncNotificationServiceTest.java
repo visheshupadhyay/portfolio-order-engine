@@ -22,9 +22,6 @@ import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.AbstractNotifier;
-import com.vishesh.orderengine.AsyncNotificationService;
-import com.vishesh.orderengine.Order;
 
 public class AsyncNotificationServiceTest {
 

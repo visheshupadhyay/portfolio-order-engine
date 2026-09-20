@@ -66,5 +66,11 @@
         <artifactId>spring-security-test</artifactId>
         <scope>test</scope>
     </dependency>
+    <!-- Generates OpenAPI JSON and provides the Swagger UI API documentation page. -->
+    <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>3.1.1</version>
+    </dependency>
 </dependencies>
 </project>
