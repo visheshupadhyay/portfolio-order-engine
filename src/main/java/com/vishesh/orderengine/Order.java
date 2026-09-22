@@ -9,11 +9,17 @@ public class Order {
     private OrderStatus status;
 
     Order(String id) {
-        if (id==null || id.isBlank()) {
+        this(id, OrderStatus.CREATED);
+    }
+
+    // Rebuilds an existing order from repository data; it does not itself query or
+    // update the database.
+    Order(String id, OrderStatus status) {
+        if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("Order cannot be blank");
         }
         this.id = id;
-        this.status = OrderStatus.CREATED;
+        this.status = status;
     }
 
     String getId() {
@@ -25,9 +31,9 @@ public class Order {
     }
 
     void markPaid() {
-        if (this.status!= OrderStatus.CREATED) {
+        if (this.status != OrderStatus.CREATED) {
             throw new IllegalStateException("Only CREATED orders can be PAID");
         }
-        this.status= OrderStatus.PAID;
+        this.status = OrderStatus.PAID;
     }
 }

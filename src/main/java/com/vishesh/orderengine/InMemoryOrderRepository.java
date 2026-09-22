@@ -1,19 +1,21 @@
 package com.vishesh.orderengine;
 
 import java.util.ArrayList;
-/*
- * Spring-discovered repository implementation used for learning. It stores
- * orders in memory behind the OrderRepository contract and can later be
- * replaced by a database-backed implementation.
- */
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
-@Repository 
+/*
+ * Lightweight storage used outside the postgres profile. It keeps the same
+ * OrderRepository contract, so controllers/services do not know which storage
+ * implementation Spring selected.
+ */
+@Profile("!postgres")
+@Repository
 public class InMemoryOrderRepository implements OrderRepository {
     private final Map<String, Order> map = new HashMap<>();
 
@@ -33,7 +35,26 @@ public class InMemoryOrderRepository implements OrderRepository {
 
     @Override
     public List<Order> findAll() {
-        // Return a snapshot so callers cannot mutate the repository's map through the list.
+        // Return a snapshot so callers cannot mutate the repository's map through the
+        // list.
         return new ArrayList<>(this.map.values());
+    }
+
+    @Override
+    public synchronized boolean markPaidIfCreated(String orderId) {
+        // One synchronized check-and-change prevents two in-memory callers from both
+        // believing they made the CREATED -> PAID transition.
+        if (map.containsKey(orderId) && map.get(orderId).getStatus() == OrderStatus.CREATED) {
+            map.get(orderId).markPaid();
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    @Override
+    public synchronized boolean createIfAbsent(Order order) {
+        // null means no prior value existed, so this call inserted the new order.
+        return map.putIfAbsent(order.getId(), order) == null;
     }
 }

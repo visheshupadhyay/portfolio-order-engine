@@ -72,5 +72,18 @@
         <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         <version>3.1.1</version>
     </dependency>
+
+    <!-- Gives Spring Boot JDBC access and its Hikari connection pool. -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+
+    <!-- Lets Java speak PostgreSQL's database protocol at runtime. -->
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <scope>runtime</scope>
+    </dependency>
 </dependencies>
 </project>

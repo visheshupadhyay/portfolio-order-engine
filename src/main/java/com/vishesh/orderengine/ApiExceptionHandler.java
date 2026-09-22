@@ -41,5 +41,4 @@ public class ApiExceptionHandler {
         String message = "Invalid " + exception.getName() + ": " + exception.getValue();
         return ResponseEntity.badRequest().body(new ApiError(HttpStatus.BAD_REQUEST.value(), message));
     }
-
 }

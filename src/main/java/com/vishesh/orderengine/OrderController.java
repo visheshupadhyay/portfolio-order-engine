@@ -4,7 +4,6 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -69,15 +68,14 @@ public class OrderController {
     })
     @PostMapping
     public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
-        Optional<Order> existingOrder = orderRepository.findOrderById(request.id());
-        if (existingOrder.isPresent()) {
+        Order order = new Order(request.id());
+        // Avoid an unsafe "find first, then save" race: the repository/database makes
+        // the create-or-already-exists decision atomically.
+        if (!orderRepository.createIfAbsent(order)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Order already exists: " + request.id());
         }
-
-        Order order = new Order(request.id());
-        orderRepository.save(order);
 
         URI location = URI.create("/orders/" + order.getId());
 
@@ -97,8 +95,10 @@ public class OrderController {
                         HttpStatus.NOT_FOUND,
                         "Order not found: " + id));
 
-        orderPaymentService.pay(order);
-        return new OrderResponse(id, order.getStatus().name());
+        // Payment may be persisted by a direct SQL update, so use the freshly loaded
+        // result returned by the service rather than the earlier Java object.
+        Order paidOrder = orderPaymentService.pay(order);
+        return new OrderResponse(paidOrder.getId(), paidOrder.getStatus().name());
     }
 
     @ApiResponses({

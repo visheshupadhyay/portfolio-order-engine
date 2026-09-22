@@ -28,12 +28,16 @@ public class OrderPaymentServiceTest {
     @Test 
     public void returnsAlreadyPaidOrderWithoutSendingSecondNotification() {
         InMemoryOrderRepository inMemoryOrderRepository = new InMemoryOrderRepository();
-        Order order = new Order("order-101");
+        Order order1 = new Order("order-101");
+        inMemoryOrderRepository.save(order1);
         RecordingPaymentNotifier notifier = new RecordingPaymentNotifier("TEST1");
         OrderPaidNotificationService notificationService = new OrderPaidNotificationService(notifier);
         OrderPaymentService paymentService = new OrderPaymentService(inMemoryOrderRepository, notificationService);
-        Order firstTry = paymentService.pay(order);
-        Order secondTry = paymentService.pay(order);
+        Order firstTry = paymentService.pay(order1);
+        // A second request would load a different Java object, even though it refers
+        // to the same stored order. This catches stale-object duplicate notifications.
+        Order order2 = new Order(order1.getId());
+        Order secondTry = paymentService.pay(order2);
 
         assertEquals(OrderStatus.PAID,firstTry.getStatus());
         assertEquals(OrderStatus.PAID,secondTry.getStatus());

@@ -17,4 +17,16 @@ interface OrderRepository {
      * controller, not in every repository implementation.
      */
     List<Order> findAll();
+
+    /*
+     * Atomically attempts CREATED -> PAID. true identifies the one caller that
+     * made the state change; false prevents repeated notification on retries.
+     */
+    boolean markPaidIfCreated(String orderId);
+
+    /*
+     * Atomically creates an order only if its ID is unused. The boolean lets the
+     * controller return 201 for the winner and 409 for a duplicate request.
+     */
+    boolean createIfAbsent(Order order);
 }
