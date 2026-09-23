@@ -10,11 +10,12 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 /*
- * Lightweight storage used outside the postgres profile. It keeps the same
- * OrderRepository contract, so controllers/services do not know which storage
- * implementation Spring selected.
+ * Lightweight storage used only when neither database-backed profile is active.
+ * It keeps the same OrderRepository contract, so controllers/services do not
+ * know which storage implementation Spring selected.
  */
-@Profile("!postgres")
+// The three persistence choices are mutually exclusive: default memory, JDBC, or JPA.
+@Profile("!postgres & !jpa")
 @Repository
 public class InMemoryOrderRepository implements OrderRepository {
     private final Map<String, Order> map = new HashMap<>();

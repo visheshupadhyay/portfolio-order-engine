@@ -9,8 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.RequestContext;
-
 public class RequestContextTest {
     @Test
     public void keepsRequestIdsSeparateAcrossThreads() throws InterruptedException {

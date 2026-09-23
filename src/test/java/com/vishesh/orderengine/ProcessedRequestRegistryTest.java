@@ -8,8 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.ProcessedRequestRegistry;
-
 public class ProcessedRequestRegistryTest {
     @Test 
     public void acceptsOnlyOneConcurrentRequestWithSameId() throws InterruptedException  {

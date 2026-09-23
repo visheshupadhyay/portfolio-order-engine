@@ -12,8 +12,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.PaymentProviderLimiter;
-
 public class PaymentProviderLimiterTest {
     @Test
     public void allowsSecondCallOnlyAfterFirstCallFinishes() throws InterruptedException {

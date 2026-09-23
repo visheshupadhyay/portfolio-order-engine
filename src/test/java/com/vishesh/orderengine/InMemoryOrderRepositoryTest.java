@@ -13,9 +13,6 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
-import com.vishesh.orderengine.InMemoryOrderRepository;
-import com.vishesh.orderengine.Order;
-
 public class InMemoryOrderRepositoryTest {
     @Test
     void saveOrderTest() {
