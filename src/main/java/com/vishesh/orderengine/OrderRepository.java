@@ -10,6 +10,7 @@ import java.util.Optional;
 
 interface OrderRepository {
     void save(Order order);
+
     Optional<Order> findOrderById(String orderId);
 
     /*
@@ -29,4 +30,13 @@ interface OrderRepository {
      * controller return 201 for the winner and 409 for a duplicate request.
      */
     boolean createIfAbsent(Order order);
+
+    /*
+     * Returns one ID-sorted page and the total number of matching orders.
+     * A null status means no status filter.
+     */
+    OrderPage findPage(OrderStatus status, int page, int size);
+
+    // Sequential pagination contract: after is exclusive and nextAfter comes from the last returned ID.
+    OrderCursorPage findAfter(OrderStatus status, String after, int size);
 }

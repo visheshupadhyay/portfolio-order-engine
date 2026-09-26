@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +39,7 @@ import jakarta.validation.Valid;
 @RestController
 @RequestMapping("/orders")
 public class OrderController {
+    private static final int MAX_PAGE_SIZE = 100;
     private final OrderRepository orderRepository;
     private final OrderPaymentService orderPaymentService;
 
@@ -87,13 +89,11 @@ public class OrderController {
             @ApiResponse(responseCode = "200", description = "Order paid or already paid", content = @Content(mediaType = "application/json", schema = @Schema(implementation = OrderResponse.class))),
             @ApiResponse(responseCode = "404", description = "Order not found", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
     })
-    @Operation(summary = "Pay an order", description = "Marks a CREATED order as PAID. A repeated payment returns the existing PAID order without a second notification.")
+    @Operation(summary = "Pay an order", description = "Marks a CREATED order as PAID. A repeated payment returns the existing PAID order without a second notification event.")
     @PostMapping("/{id}/pay")
     public OrderResponse payOrder(@PathVariable String id) {
         Order order = orderRepository.findOrderById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Order not found: " + id));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + id));
 
         // Payment may be persisted by a direct SQL update, so use the freshly loaded
         // result returned by the service rather than the earlier Java object.
@@ -105,42 +105,50 @@ public class OrderController {
             @ApiResponse(responseCode = "200", description = "Orders returned", content = @Content(mediaType = "application/json", schema = @Schema(implementation = OrderPageResponse.class))),
             @ApiResponse(responseCode = "400", description = "Invalid list query parameters", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
     })
-    @Operation(summary = "List orders", description = "Returns a paginated, ID-sorted list of orders. Results can optionally be filtered by status.")
+    @Operation(summary = "List orders", description = "Returns a paginated, ID-sorted list of orders. Results can optionally be filtered by status. Page size must be from 1 to 100.")
     @GetMapping
     public OrderPageResponse getOrders(@RequestParam(required = false) OrderStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
 
         if (page < 0) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "page must be greater than or equal to 0");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be greater than or equal to 0");
         }
 
         if (size <= 0) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "size must be greater than 0");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be greater than 0");
         }
-        List<Order> orders = orderRepository.findAll();
-        List<OrderResponse> orderResponses = new ArrayList<>();
-        for (Order order : orders) {
-            if (status == null || order.getStatus() == status) {
-                orderResponses.add(new OrderResponse(order.getId(), order.getStatus().name()));
-            }
+        if (size > MAX_PAGE_SIZE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be less than or equal to 100");
         }
-        // HashMap storage has no stable iteration order, so sort before pagination for
-        // repeatable API pages.
-        orderResponses.sort(Comparator.comparing(OrderResponse::id));
+        OrderPage orderPage = orderRepository.findPage(status, page, size);
+        List<OrderResponse> content = orderPage.content().stream()
+                .map(order -> new OrderResponse(order.getId(), order.getStatus().name())).toList();
 
-        int totalElements = orderResponses.size();
-
-        int startIndex = Math.min(page * size, totalElements);
-
-        int endIndex = Math.min(startIndex + size, totalElements);
-
-        List<OrderResponse> content = orderResponses.subList(startIndex, endIndex);
-
-        return new OrderPageResponse(content, page, size, totalElements);
+        return new OrderPageResponse(content, orderPage.page(), orderPage.size(), orderPage.totalElements());
     }
+
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Cursor batch returned", content = @Content(mediaType = "application/json", schema = @Schema(implementation = OrderCursorPageResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid cursor query parameters", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiError.class)))
+    })
+    @Operation(summary = "List orders using cursor pagination", description = "Returns an ID-sorted cursor batch of orders. Results can optionally be filtered by status. Send the previous response's nextAfter value as after to load the next batch. Page size must be from 1 to 100. nextAfter is null when no more orders remain.")
+    @GetMapping("/cursor")
+    public OrderCursorPageResponse getOrderByCursor(@RequestParam(required = false) OrderStatus status,
+            @RequestParam(required = false) String after,
+            @RequestParam(defaultValue = "10") int size) {
+
+        if (size <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be greater than 0");
+        }
+        if (size > MAX_PAGE_SIZE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be less than or equal to 100");
+        }
+
+        OrderCursorPage page = orderRepository.findAfter(status, after, size);
+        List<OrderResponse> content = page.content().stream()
+                .map(order -> new OrderResponse(order.getId(), order.getStatus().name())).toList();
+        return new OrderCursorPageResponse(content, page.nextAfter());
+    }
+
 }

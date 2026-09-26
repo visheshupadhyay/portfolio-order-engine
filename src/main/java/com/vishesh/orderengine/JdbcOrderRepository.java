@@ -67,4 +67,56 @@ public class JdbcOrderRepository implements OrderRepository {
 
         return rows == 1;
     }
+
+    @Override
+    public OrderPage findPage(OrderStatus status, int page, int size) {
+        // Offset pages require two queries: one slice for content and one COUNT for navigation metadata.
+        int offset = page * size;
+        List<Order> content;
+        long totalElements;
+
+        if (status == null) {
+            content = jdbcTemplate.query("SELECT id, status FROM orders ORDER BY id ASC LIMIT ? OFFSET ?",
+                    new OrderRowMapper(), size, offset);
+            totalElements = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM orders", Long.class);
+        } else {
+            content = jdbcTemplate.query(
+                    "SELECT id, status FROM orders WHERE status = ? ORDER BY id ASC LIMIT ? OFFSET ?",
+                    new OrderRowMapper(), status.name(), size, offset);
+            totalElements = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM orders where status=?", Long.class,
+                    status.name());
+        }
+        return new OrderPage(content, page, size, totalElements);
+    }
+
+    @Override
+    public OrderCursorPage findAfter(OrderStatus status, String after, int size) {
+        // Cursor traversal avoids OFFSET. LIMIT size + 1 reveals whether another batch exists.
+        List<Order> candidates;
+
+        if (status == null && after == null) {
+            candidates = jdbcTemplate.query("SELECT id, status FROM orders ORDER BY id ASC LIMIT ?",
+                    new OrderRowMapper(), size + 1);
+        } else if (status == null) {
+            candidates = jdbcTemplate.query("SELECT id, status FROM orders WHERE id > ? ORDER BY id ASC LIMIT ?",
+                    new OrderRowMapper(), after, size + 1);
+
+        } else if (after == null) {
+            candidates = jdbcTemplate.query("SELECT id, status FROM orders WHERE status = ? ORDER BY id ASC LIMIT ?",
+                    new OrderRowMapper(), status.name(), size + 1);
+
+        } else {
+            candidates = jdbcTemplate.query(
+                    "SELECT id, status FROM orders WHERE status = ? AND id > ? ORDER BY id ASC LIMIT ?",
+                    new OrderRowMapper(), status.name(), after, size + 1);
+        }
+
+        boolean hasMore = candidates.size() > size;
+        int startIndex = 0;
+        int endIndex = Math.min(size, candidates.size());
+        List<Order> content = candidates.subList(startIndex, endIndex);
+        String nextAfter = hasMore ? content.getLast().getId() : null;
+
+        return new OrderCursorPage(content, nextAfter);
+    }
 }

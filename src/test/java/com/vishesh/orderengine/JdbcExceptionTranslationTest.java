@@ -23,6 +23,8 @@ public class JdbcExceptionTranslationTest {
     @AfterEach
     public void cleanUpDatabase() {
         if (savedOrderId != null) {
+
+            jdbcTemplate.update("DELETE FROM outbox_events WHERE order_id = ?", savedOrderId);
             jdbcTemplate.update("DELETE FROM orders WHERE id = ?", savedOrderId);
         }
     }

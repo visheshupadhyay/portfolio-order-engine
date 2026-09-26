@@ -14,6 +14,7 @@ abstract class AbstractNotifier {
     }
 
     public void send(String message) {
+        // Validate once in the shared template method; concrete notifiers only decide delivery mechanics.
         if (message == null || message.isBlank()) {
             throw new IllegalArgumentException("Blank messages are not allowed");
         }

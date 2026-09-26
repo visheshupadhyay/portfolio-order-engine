@@ -2,70 +2,50 @@ package com.vishesh.orderengine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 /*
- * Fast unit tests for the extracted payment workflow. The recording notifier
- * proves that a retry does not send a second notification.
+ * Fast unit tests for the transactional-outbox decision in the payment workflow.
+ * The service records durable PENDING work; a separate worker performs delivery later.
  */
 public class OrderPaymentServiceTest {
 
     @Test
-    public void marksOrderPaidAndSendsNotification() {
+    public void marksOrderPaidAndEnqueuesPendingNotificationEvent() {
         InMemoryOrderRepository inMemoryOrderRepository = new InMemoryOrderRepository();
+        Order order = new Order("order-101", OrderStatus.CREATED);
+        inMemoryOrderRepository.save(order);
+        InMemoryOutboxEventRepository inMemoryOutboxEventRepository = new InMemoryOutboxEventRepository();
+        OrderPaymentService orderPaymentService = new OrderPaymentService(inMemoryOrderRepository,
+                inMemoryOutboxEventRepository);
+        Order returnedOrder = orderPaymentService.pay(order);
+
+        // A successful state transition creates exactly one durable delivery task.
+        List<OutboxEvent> events = inMemoryOutboxEventRepository.findAll();
+        assertEquals(1, events.size());
+        assertEquals(returnedOrder.getId(), events.get(0).orderId());
+        assertEquals(OutboxEventStatus.PENDING, events.get(0).status());
+        assertEquals(0, events.get(0).attemptCount());
+        assertEquals(OrderStatus.PAID, returnedOrder.getStatus());
+
+    }
+
+    @Test
+    public void doesNotEnqueueSecondEventForAlreadyPaidOrder() {
+        InMemoryOrderRepository inMemoryOrderRepository = new InMemoryOrderRepository();
+        InMemoryOutboxEventRepository inMemoryOutboxEventRepository = new InMemoryOutboxEventRepository();
         Order order = new Order("order-101");
         inMemoryOrderRepository.save(order);
-        RecordingPaymentNotifier recordingPaymentNotifier = new RecordingPaymentNotifier("TEST0");
-        OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(
-                recordingPaymentNotifier);
         OrderPaymentService orderPaymentService = new OrderPaymentService(inMemoryOrderRepository,
-                orderPaidNotificationService);
-        Order returnedOrder = orderPaymentService.pay(order);
-        assertEquals(OrderStatus.PAID, returnedOrder.getStatus());
-        assertEquals("Order is paid orderID:" + returnedOrder.getId(), recordingPaymentNotifier.getMessage());
-    }
-
-    @Test 
-    public void returnsAlreadyPaidOrderWithoutSendingSecondNotification() {
-        InMemoryOrderRepository inMemoryOrderRepository = new InMemoryOrderRepository();
-        Order order1 = new Order("order-101");
-        inMemoryOrderRepository.save(order1);
-        RecordingPaymentNotifier notifier = new RecordingPaymentNotifier("TEST1");
-        OrderPaidNotificationService notificationService = new OrderPaidNotificationService(notifier);
-        OrderPaymentService paymentService = new OrderPaymentService(inMemoryOrderRepository, notificationService);
-        Order firstTry = paymentService.pay(order1);
-        // A second request would load a different Java object, even though it refers
-        // to the same stored order. This catches stale-object duplicate notifications.
-        Order order2 = new Order(order1.getId());
-        Order secondTry = paymentService.pay(order2);
-
-        assertEquals(OrderStatus.PAID,firstTry.getStatus());
-        assertEquals(OrderStatus.PAID,secondTry.getStatus());
-        assertEquals(1,notifier.getDeliveryCount());
-    }
-
-    private static class RecordingPaymentNotifier extends AbstractNotifier {
-        private String message;
-        private int trackDeliveryCount;
-
-        public RecordingPaymentNotifier(String senderName) {
-            super(senderName);
-
-        }
-
-        @Override
-        protected void deliver(String message) {
-            this.message = message;
-            trackDeliveryCount++;
-        }
-
-        private String getMessage() {
-            return this.message;
-        }
-
-        private int getDeliveryCount() {
-            return this.trackDeliveryCount;
-        }
-
+                inMemoryOutboxEventRepository);
+        Order returnedOrderCopy1 = orderPaymentService.pay(order);
+        Order returnedOrderCopy2 = orderPaymentService.pay(new Order("order-101"));
+        assertEquals(OrderStatus.PAID, returnedOrderCopy1.getStatus());
+        assertEquals(OrderStatus.PAID, returnedOrderCopy2.getStatus());
+        // A second request loses the CREATED -> PAID transition and creates no second event.
+        List<OutboxEvent> events = inMemoryOutboxEventRepository.findAll();
+        assertEquals(1, events.size());
     }
 }

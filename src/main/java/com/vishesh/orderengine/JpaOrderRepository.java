@@ -4,6 +4,11 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.context.annotation.Profile;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,4 +67,41 @@ public class JpaOrderRepository implements OrderRepository {
     private OrderEntity toEntity(Order order) {
         return new OrderEntity(order.getId(), order.getStatus());
     }
+
+    @Override
+    public OrderPage findPage(OrderStatus status, int page, int size) {
+        // Page asks Spring Data for both content and total count, matching the offset API contract.
+        Pageable request = PageRequest.of(page, size, Sort.by("id").ascending());
+        Page<OrderEntity> entityPage;
+
+        if (status == null) {
+            entityPage = orderEntityJpaRepository.findAll(request);
+        } else {
+            entityPage = orderEntityJpaRepository.findAllByStatus(status, request);
+        }
+        List<Order> content = entityPage.getContent().stream().map(this::toDomain).toList();
+        return new OrderPage(content, entityPage.getNumber(), entityPage.getSize(), entityPage.getTotalElements());
+    }
+
+    @Override
+    public OrderCursorPage findAfter(OrderStatus status, String after, int size) {
+        // Slice deliberately avoids a total-count query; hasNext becomes the nextAfter decision.
+        Pageable request = PageRequest.of(0, size, Sort.by("id"));
+        Slice<OrderEntity> entitySlice;
+
+        if (status == null && after == null) {
+            entitySlice = orderEntityJpaRepository.findCursorSlice(request);
+        } else if (status == null) {
+            entitySlice = orderEntityJpaRepository.findByIdGreaterThan(after, request);
+        } else if (after == null) {
+            entitySlice = orderEntityJpaRepository.findByStatus(status, request);
+        } else {
+            entitySlice = orderEntityJpaRepository.findByStatusAndIdGreaterThan(status, after, request);
+        }
+
+        List<Order> content = entitySlice.getContent().stream().map(this::toDomain).toList();
+        String nextAfter = entitySlice.hasNext() ? content.getLast().getId() : null;
+        return new OrderCursorPage(content, nextAfter);
+    }
+
 }

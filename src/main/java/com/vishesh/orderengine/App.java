@@ -8,7 +8,10 @@ package com.vishesh.orderengine;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
+// Enables @Scheduled methods; the outbox scheduler itself is still opt-in by property.
+@EnableScheduling
 @SpringBootApplication 
 public class App {
     public static void main(String[] args) {

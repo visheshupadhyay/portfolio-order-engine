@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 
 /*
  * End-to-end MVC contracts through the real security filter chain: readers
@@ -117,6 +118,7 @@ public class OrderControllerTest {
 
     @Test
     public void returnsAllImportedOrders() throws Exception {
+        // The default profile returns the same page-response shape as JDBC and JPA profiles.
         mockMvc.perform(get("/orders").with(readerCredentials()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
@@ -173,6 +175,29 @@ public class OrderControllerTest {
     }
 
     @Test
+    public void rejectsPageSizeAboveMaximum() throws Exception {
+        mockMvc.perform(get("/orders")
+                .param("page", "0")
+                .param("size", "101")
+                .with(readerCredentials()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("size must be less than or equal to 100"));
+    }
+
+    @Test
+    public void acceptsMaximumPageSize() throws Exception {
+        mockMvc.perform(get("/orders")
+                .param("page", "0")
+                .param("size", "100")
+                .with(readerCredentials()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(100));
+    }
+
+    @Test
     public void returnsEmptyContentForPageBeyondAvailableOrders() throws Exception {
         mockMvc.perform(get("/orders")
                 .with(readerCredentials())
@@ -183,5 +208,71 @@ public class OrderControllerTest {
                 .andExpect(jsonPath("$.page").value(5))
                 .andExpect(jsonPath("$.size").value(1))
                 .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    public void returnsFirstCursorBatchOfOrders() throws Exception {
+        mockMvc.perform(get("/orders/cursor")
+                .with(readerCredentials())
+                .param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].id").value("order-101"))
+                .andExpect(jsonPath("$.content[0].status").value(OrderStatus.CREATED.name()))
+                .andExpect(jsonPath("$.nextAfter").value("order-101"));
+    }
+
+    @Test
+    public void returnsNextCursorBatchAfterProvidedId() throws Exception {
+        mockMvc.perform(get("/orders/cursor")
+                .with(readerCredentials())
+                .param("size", "1")
+                .param("after", "order-101"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].id").value("order-102"))
+                .andExpect(jsonPath("$.content[0].status").value(OrderStatus.PAID.name()))
+                .andExpect(jsonPath("$.nextAfter").value(nullValue()));
+    }
+
+    @Test
+    public void returnsCursorBatchFilteredByStatus() throws Exception {
+        mockMvc.perform(get("/orders/cursor")
+                .with(readerCredentials())
+                .param("size", "1")
+                .param("status", OrderStatus.PAID.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].id").value("order-102"))
+                .andExpect(jsonPath("$.content[0].status").value(OrderStatus.PAID.name()))
+                .andExpect(jsonPath("$.nextAfter").value(nullValue()));
+    }
+
+    @Test
+    public void returnsCursorBatchFilteredByStatusAfterProvidedId() throws Exception {
+        mockMvc.perform(get("/orders/cursor")
+                .with(readerCredentials())
+                .param("size", "1")
+                .param("after", "order-101")
+                .param("status", OrderStatus.PAID.name()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].id").value("order-102"))
+                .andExpect(jsonPath("$.content[0].status").value(OrderStatus.PAID.name()))
+                .andExpect(jsonPath("$.nextAfter").value(nullValue()));
+    }
+
+    @Test
+    public void guardTests() throws Exception {
+        mockMvc.perform(get("/orders/cursor")
+                .with(readerCredentials())
+                .param("size", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("size must be greater than 0"));
+        mockMvc.perform(get("/orders/cursor")
+                .with(readerCredentials())
+                .param("size", "101"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("size must be less than or equal to 100"));
     }
 }

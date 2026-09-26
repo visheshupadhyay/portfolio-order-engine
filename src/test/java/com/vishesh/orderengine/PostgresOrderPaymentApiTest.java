@@ -20,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // Verifies the real PostgreSQL payment path returns a freshly loaded PAID value,
 // rather than the stale Java Order that existed before the direct SQL update.
+// Payment also creates an outbox child row, so cleanup must remove that row first.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("postgres")
@@ -42,6 +43,7 @@ public class PostgresOrderPaymentApiTest {
     @AfterEach
     public void cleanUpDatabase() {
         if (saveOrderId != null) {
+            jdbcTemplate.update("DELETE from outbox_events where order_id =?", saveOrderId);
             jdbcTemplate.update("DELETE from orders where id =?", saveOrderId);
         }
     }

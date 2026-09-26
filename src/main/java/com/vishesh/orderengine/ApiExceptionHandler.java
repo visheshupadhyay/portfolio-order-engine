@@ -1,5 +1,6 @@
 package com.vishesh.orderengine;
 
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -40,5 +41,13 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
         String message = "Invalid " + exception.getName() + ": " + exception.getValue();
         return ResponseEntity.badRequest().body(new ApiError(HttpStatus.BAD_REQUEST.value(), message));
+    }
+
+    @ExceptionHandler(DataAccessResourceFailureException.class)
+    public ResponseEntity<ApiError> handleDataAccessResourceFailure(DataAccessResourceFailureException exception) {
+        // A connection/query-resource failure is transient from the client's point
+        // of view. Do not return exception.getMessage(): it can reveal SQL/driver details.
+        ApiError apiError = new ApiError(HttpStatus.SERVICE_UNAVAILABLE.value(),"Database is temporarily unavailable");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE.value()).body(apiError);
     }
 }

@@ -1,6 +1,7 @@
 package com.vishesh.orderengine;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,5 +58,38 @@ public class InMemoryOrderRepository implements OrderRepository {
     public synchronized boolean createIfAbsent(Order order) {
         // null means no prior value existed, so this call inserted the new order.
         return map.putIfAbsent(order.getId(), order) == null;
+    }
+
+    @Override
+    public OrderPage findPage(OrderStatus status, int page, int size) {
+        // This emulates the database contract for tests: filter/sort first, then slice by offset.
+        List<Order> matchingOrders = map.values()
+                .stream()
+                .filter(order -> status == null || order.getStatus() == status)
+                .sorted(Comparator.comparing(Order::getId)).toList();
+        int totalElements = matchingOrders.size();
+        int startIndex = Math.min(page * size, totalElements);
+        int endIndex = Math.min(startIndex + size, totalElements);
+        List<Order> content = matchingOrders.subList(startIndex, endIndex);
+        return new OrderPage(content, page, size, totalElements);
+    }
+
+    @Override
+    public OrderCursorPage findAfter(OrderStatus status, String after, int size) {
+        // Fetch one extra item to determine whether the response needs an outgoing cursor.
+        List<Order> candidates = map.values()
+                .stream()
+                .filter(order -> status == null || order.getStatus() == status)
+                .filter(order -> after == null || order.getId().compareTo(after) > 0)
+                .sorted(Comparator.comparing(Order::getId)).limit(size + 1).toList();
+
+        boolean hasMore = candidates.size() > size;
+        int startIndex =0;
+        int endIndex = Math.min(size,candidates.size());
+        List<Order> content = candidates.subList(startIndex, endIndex);
+        String nextAfter = hasMore ? content.getLast().getId() : null;
+
+        return new OrderCursorPage(content, nextAfter);
+
     }
 }

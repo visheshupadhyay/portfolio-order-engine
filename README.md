@@ -1,82 +1,176 @@
 # Portfolio Order Engine
 
-A small Java 21 application that imports orders from a text file, validates each record, and saves valid orders in an in-memory repository.
+A Java 21 / Spring Boot order-management learning project that has grown from file import and in-memory storage into a secured REST API with PostgreSQL, JDBC, and JPA/Hibernate persistence paths.
 
-## Features
+The project is deliberately built in small, tested steps. It demonstrates backend concepts that matter in production: validation, error contracts, authorization, transactional state changes, database constraints, query performance, and optimistic locking.
 
-- Enum-backed `CREATED` and `PAID` order states.
-- Protection against paying the same order twice.
-- File-based order import using Java NIO.
-- Safe skipping of malformed records, invalid statuses, and blank order IDs.
-- In-memory repository lookup with `Optional`.
-- Constructor injection between the importer, import service, and repository.
-- Maven build and JUnit 5 test suite with 15 tests.
+## Highlights
+
+- REST endpoints to create, find, list, filter, paginate, and pay orders.
+- `CREATED` and `PAID` are enum-backed domain states; duplicate payment requests are idempotent and do not create a second notification event.
+- Consistent JSON errors for validation failures, missing orders, duplicates, invalid query values, invalid pagination, and temporary database outages (`503` without SQL details).
+- HTTP Basic authentication, role-based read/write access, CSRF protection for state-changing requests, and an explicit CORS policy.
+- OpenAPI documentation and Swagger UI for the order API.
+- PostgreSQL `orders` and `order_items` tables with primary keys, check constraints, foreign keys, and an indexed item-to-order relationship.
+- Atomic duplicate-safe creation with `INSERT ... ON CONFLICT DO NOTHING` and atomic `CREATED -> PAID` payment transitions.
+- JDBC and JPA/Hibernate implementations behind one `OrderRepository` domain contract.
+- JPA mappings for one order to many order items, cascades, lazy loading, targeted entity-graph fetches, JPQL fetch joins, database-side pagination, and optimistic locking with `@Version`.
+- Offset pagination for numbered pages and totals, plus cursor pagination for sequential load-more reads without a total-count query.
+- A transactional outbox persists notification work with the payment transaction, then a retrying worker delivers it after commit.
+- Unit, MockMvc, JDBC, JPA, and PostgreSQL-backed integration tests.
 
 ## Architecture
 
 ```text
-orders.txt
-    -> OrderFileImporter
-    -> OrderImportService
-    -> InMemoryOrderRepository
+HTTP client / startup import
+            |
+            v
+Controller / OrderImportService
+            |
+            v
+OrderPaymentService and domain Order rules
+            |
+            v
+OrderRepository + OutboxEventRepository
+   |             |                 |
+   v             v                 v
+in-memory     JDBC profile       JPA profile
+(default)     JdbcTemplate       JpaOrderRepository
+                                  |
+                                  v
+                         Spring Data JPA / Hibernate
+                                  |
+                                  v
+                             PostgreSQL
+
+Committed PENDING outbox event
+            |
+            v
+OutboxEventDeliveryWorker --> notification provider
+            |
+            v
+      SENT / retry later / FAILED
 ```
+
+The controller and service depend on `OrderRepository`, not on a database technology. Spring chooses an implementation through profiles:
+
+| Active profile | Selected implementation | Purpose |
+| --- | --- | --- |
+| no persistence profile | `InMemoryOrderRepository` | Fast local/default learning flow |
+| `postgres` | `JdbcOrderRepository` | Explicit SQL through `JdbcTemplate` |
+| `jpa` | `JpaOrderRepository` | Domain-to-entity adapter using Spring Data JPA |
+
+Activate only one database profile at a time.
+
+## API overview
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/orders` | Create a `CREATED` order; duplicate IDs return `409` |
+| `GET` | `/orders/{id}` | Find one order |
+| `GET` | `/orders?status=PAID&page=0&size=10` | List, optionally filter, and paginate orders |
+| `GET` | `/orders/cursor?status=CREATED&after=order-101&size=20` | Load the next ID-sorted cursor batch; response contains `content` and `nextAfter` |
+| `POST` | `/orders/{id}/pay` | Atomically pay a created order; safe to retry |
+
+Swagger/OpenAPI is available when the application runs at `/swagger-ui/index.html` and `/v3/api-docs`.
+
+## Pagination and indexes
+
+- `GET /orders` uses offset/page-number pagination and returns `page`, `size`, and `totalElements`. It is useful when a client needs numbered pages or a total result count.
+- `GET /orders/cursor` uses cursor pagination and returns `content` plus `nextAfter`. Send a previous response's `nextAfter` value back as `after` to load the next batch.
+- Cursor pagination avoids deep-offset scanning and avoids position-shift duplicates when new rows are inserted between sequential requests. A newly inserted row that sorts before the cursor is intentionally not added to the already-started traversal.
+- The primary key on `orders(id)` supports unfiltered cursor queries. Status-filtered cursor queries require this composite PostgreSQL index:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_orders_status_id
+ON orders (status, id);
+```
+
+The index supports `WHERE status = ? AND id > ? ORDER BY id LIMIT ?` by narrowing to one status and then reading IDs in cursor order.
+
+## JPA/Hibernate notes
+
+- `OrderEntity` maps `orders`; `OrderItemEntity` maps `order_items`.
+- `OrderItemEntity.order` owns the `order_id` foreign key. `OrderEntity.items` is the inverse collection.
+- The item collection is lazy by default, so item rows are not loaded for every order lookup.
+- Detail reads can use an `@EntityGraph`; list reads that need every item use a JPQL `left join fetch` to avoid the N+1 query pattern.
+- `@Version` prevents a stale entity copy from overwriting a newer committed update.
+- The JPA adapter intentionally uses explicit modifying queries for atomic PostgreSQL creation/upsert/payment operations. JPA optimistic locking protects entity updates, but it does not replace conditional business-state transitions.
+
+## Transactional outbox and notification reliability
+
+Paying an order does not call the external notification provider inside the payment request. Instead, one transaction changes the order from `CREATED` to `PAID` and inserts an `outbox_events` row with status `PENDING`.
+
+- If the transaction commits, both the paid order and its pending notification event are durable.
+- If it rolls back, neither change remains in PostgreSQL.
+- `OutboxEventDeliveryWorker` later fetches due `PENDING` events, sends the notification, and marks successful events `SENT`.
+- A delivery failure records the error, increments `attempt_count`, and retries one minute later. After the third failed delivery attempt, the event becomes `FAILED` instead of retrying forever.
+- The default profile uses `InMemoryOutboxEventRepository`; both `postgres` and `jpa` profiles use `JdbcOutboxEventRepository` against PostgreSQL. The JPA order adapter and JDBC outbox write were tested together for commit and rollback behavior.
+
+The scheduler is deliberately opt-in. Set `OUTBOX_DELIVERY_ENABLED=true` in a deployed environment to enable its five-second polling loop. It stays disabled by default so test-created `PENDING` rows cannot be consumed by a background job.
+
+This is an **at-least-once** delivery design. If the process stops after a notification provider accepts a message but before the row is marked `SENT`, a later retry can send a duplicate. A real provider integration should use an idempotency key or customer-facing deduplication.
+
+## Run locally
+
+### Prerequisites
+
+- Java 21
+- Maven
+- PostgreSQL with an `order_engine` database and the project `orders`, `order_items`, and `outbox_events` schema
+- A `DB_PASSWORD` environment variable containing the local PostgreSQL password
+
+Run all tests:
+
+```powershell
+mvn test
+```
+
+Run with the default in-memory repository:
+
+```powershell
+mvn spring-boot:run
+```
+
+Run with JDBC persistence:
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.profiles=postgres"
+```
+
+Run with the JPA/Hibernate adapter:
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.profiles=jpa"
+```
+
+Enable automatic outbox delivery for a deployed run:
+
+```powershell
+$env:OUTBOX_DELIVERY_ENABLED="true"
+mvn spring-boot:run "-Dspring-boot.run.profiles=postgres"
+```
+
+The application reads its database password from `DB_PASSWORD`; do not commit passwords to `application.properties`.
 
 ## Project structure
 
 ```text
-portfolio-order-engine/
-|-- pom.xml
-|-- README.md
-|-- .gitignore
-`-- src/
-    |-- main/
-    |   |-- java/
-    |   |   |-- App.java
-    |   |   |-- Order.java
-    |   |   |-- OrderStatus.java
-    |   |   |-- OrderFileImporter.java
-    |   |   |-- OrderImportService.java
-    |   |   `-- InMemoryOrderRepository.java
-    |   `-- resources/
-    |       `-- orders.txt
-    `-- test/
-        `-- java/
-            |-- OrderTest.java
-            |-- InMemoryOrderRepositoryTest.java
-            |-- OrderFileImporterTest.java
-            `-- OrderImportServiceTest.java
+src/main/java/com/vishesh/orderengine/
+|-- Order.java / OrderStatus.java             # domain state and rules
+|-- OrderController.java                      # HTTP adapter
+|-- OrderPaymentService.java                  # transactional payment workflow
+|-- OutboxEvent*.java                          # durable notification-event contract and storage adapters
+|-- OutboxEventDeliveryWorker.java             # send, retry, and terminal-failure workflow
+|-- OutboxEventDeliveryScheduler.java          # opt-in periodic worker trigger
+|-- OrderRepository.java                      # persistence abstraction
+|-- InMemoryOrderRepository.java              # default implementation
+|-- JdbcOrderRepository.java                  # explicit PostgreSQL SQL implementation
+|-- JpaOrderRepository.java                   # domain-to-JPA adapter
+|-- OrderEntity.java / OrderItemEntity.java   # Hibernate mappings
+`-- OrderEntityJpaRepository.java             # Spring Data JPA queries
 ```
 
-`target/` is generated by Maven and is intentionally ignored by Git.
+## Current scope and next steps
 
-## Sample input
-
-`src/main/resources/orders.txt`
-
-```text
-order-101,CREATED
-order-102,PAID
-```
-
-## Run the project
-
-Prerequisites: Java 21 and Maven.
-
-```powershell
-mvn test
-mvn exec:java
-```
-
-`mvn test` runs the JUnit 5 test suite. `mvn exec:java` imports the sample file and displays the saved order statuses.
-
-## Sample output
-
-```text
-Portfolio order engine started
-order-101:CREATED
-order-102:PAID
-```
-
-## Current limitations
-
-This is an in-memory learning project, so saved orders disappear when the application stops. Future versions will add persistent storage, a REST API, and a browser UI.
+This is a modular-monolith backend project, not yet a complete production service. The next planned improvements include database migrations, containerized local development, richer API/JPA read paths, observability, Redis/Kafka reliability patterns, CI, and a React/TypeScript frontend.

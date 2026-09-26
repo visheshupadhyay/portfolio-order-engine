@@ -18,7 +18,7 @@ public class OrderPaidNotificationService {
     }
 
     public void notifyOrderPaid(Order order) {
-
+        // The outbox worker calls this only after a PENDING event has committed.
         notifier.send("Order is paid orderID:" + order.getId());
     }
 }
