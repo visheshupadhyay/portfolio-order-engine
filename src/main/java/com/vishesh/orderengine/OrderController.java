@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,6 +41,7 @@ import jakarta.validation.Valid;
 @RequestMapping("/orders")
 public class OrderController {
     private static final int MAX_PAGE_SIZE = 100;
+    private static final int ORDER_CHAR_LIMIT = 100;
     private final OrderRepository orderRepository;
     private final OrderPaymentService orderPaymentService;
 
@@ -55,6 +57,7 @@ public class OrderController {
     @Operation(summary = "Find an order by ID", description = "Returns an order's ID and current status.")
     @GetMapping("/{id}")
     public OrderResponse getOrderById(@PathVariable String id) {
+        validateOrderId(id);
         Order order = orderRepository.findOrderById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -92,6 +95,7 @@ public class OrderController {
     @Operation(summary = "Pay an order", description = "Marks a CREATED order as PAID. A repeated payment returns the existing PAID order without a second notification event.")
     @PostMapping("/{id}/pay")
     public OrderResponse payOrder(@PathVariable String id) {
+        validateOrderId(id);
         Order order = orderRepository.findOrderById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + id));
 
@@ -144,11 +148,24 @@ public class OrderController {
         if (size > MAX_PAGE_SIZE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "size must be less than or equal to 100");
         }
+        if (after != null) {
+            validateOrderId(after);
+        }
 
         OrderCursorPage page = orderRepository.findAfter(status, after, size);
         List<OrderResponse> content = page.content().stream()
                 .map(order -> new OrderResponse(order.getId(), order.getStatus().name())).toList();
         return new OrderCursorPageResponse(content, page.nextAfter());
+    }
+
+    private void validateOrderId(String orderId) {
+        if (orderId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Order id cannot be blank");
+        } else if (orderId.length() > ORDER_CHAR_LIMIT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Order id must be less than 101 char limit");
+        }
     }
 
 }

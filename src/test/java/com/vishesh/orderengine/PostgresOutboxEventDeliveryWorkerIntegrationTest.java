@@ -2,6 +2,7 @@ package com.vishesh.orderengine;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.time.LocalDateTime;
@@ -17,6 +18,8 @@ import org.springframework.test.context.ActiveProfiles;
 @SpringBootTest
 @ActiveProfiles("postgres")
 /* End-to-end worker tests against persisted PostgreSQL outbox rows. */
+/* End-to-end PostgreSQL proof that real persisted rows follow the same worker and
+ * lease-recovery lifecycle as the in-memory tests. */
 public class PostgresOutboxEventDeliveryWorkerIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -70,6 +73,31 @@ public class PostgresOutboxEventDeliveryWorkerIntegrationTest {
         assertEquals("SMS provider unavailable", event.lastError());
         assertNull(event.sentAt());
         assertEquals(now.plusMinutes(1), event.nextAttemptAt());
+    }
+
+    @Test
+    public void releasesExpiredClaimAndDeliversEventDuringWorkerRun() {
+        savedOrderId = "postgres-outbox-delivery-test-" + UUID.randomUUID();
+        jdbcTemplate.update("INSERT into orders (id, status) VALUES (?,?)", savedOrderId, OrderStatus.CREATED.name());
+        jdbcTemplate.update("INSERT into outbox_events (order_id) VALUES (?)", savedOrderId);
+
+        LocalDateTime workerRunAt = LocalDateTime.now().withNano(0).plusMinutes(10);
+        LocalDateTime oldClaimAt = workerRunAt.minusMinutes(6);
+        OutboxEvent manualEvent = outboxEventRepository.claimPendingReadyForDelivery(oldClaimAt, 1).get(0);
+        assertNotNull(manualEvent);
+        assertEquals(OutboxEventStatus.PROCESSING, manualEvent.status());
+        assertNotNull(manualEvent.claimToken());
+        outboxEventDeliveryWorker.deliverReadyEvents(workerRunAt, 10);
+
+        OutboxEvent passedEvent = jdbcTemplate
+                .query("Select * from outbox_events where order_id =?", new OutboxEventRowMapper(), savedOrderId)
+                .get(0);
+        assertEquals(OutboxEventStatus.SENT, passedEvent.status());
+        assertEquals(workerRunAt, passedEvent.sentAt());
+        assertNull(passedEvent.claimToken());
+        assertNull(passedEvent.claimedAt());
+        assertNull(passedEvent.lastError());
+        assertEquals(0,passedEvent.attemptCount());
     }
 }
 

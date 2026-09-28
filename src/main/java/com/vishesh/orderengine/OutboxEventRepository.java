@@ -5,22 +5,29 @@ import java.util.List;
 
 /*
  * Storage contract for the transactional-outbox lifecycle:
- * PENDING -> SENT on success, PENDING -> PENDING on delayed retry,
- * and PENDING -> FAILED after the worker reaches its retry limit.
+ * PENDING -> PROCESSING when one worker claims an event; PROCESSING then moves
+ * to SENT, PENDING (retry), or FAILED. An abandoned PROCESSING claim can return
+ * to PENDING after its lease expires.
  */
 interface OutboxEventRepository {
     // Called inside the payment transaction; the inserted row must commit with PAID.
     void enqueueOrderPaid(String orderId);
 
-    // Returns only work whose retry time has arrived, in deterministic oldest-first order.
-    List<OutboxEvent> findPendingReadyForDelivery(LocalDateTime now, int limit);
+    // Atomically claims due PENDING work. Returned records carry the temporary
+    // claimToken that the same worker must present to finish or reschedule them.
+    List<OutboxEvent> claimPendingReadyForDelivery(LocalDateTime now, int limit);
 
-    // A sent event is no longer eligible for the worker's PENDING query.
-    void markSent(long eventId, LocalDateTime sentAt);
+    // The id + token pair prevents an old worker from changing an event reclaimed
+    // by a newer worker. A sent event is no longer eligible for the PENDING query.
+    void markSent(long eventId,  String claimToken,LocalDateTime sentAt);
 
     // Retains failed work for a later attempt and records why this attempt failed.
-    void rescheduleAfterFailure(long eventId, String error, LocalDateTime nextAttemptAt);
+    void rescheduleAfterFailure(long eventId, String claimToken, String error, LocalDateTime nextAttemptAt);
 
     // Stops retrying permanently while retaining an audit trail for investigation.
-    void markFailed(long eventId, String error);
+    void markFailed(long eventId, String claimToken, String error);
+
+    // Recovers only leases claimed at or before the cutoff; it does not count as
+    // a provider failure, so it does not increment attemptCount.
+    int releaseExpiredClaims(LocalDateTime claimedBefore);
 }

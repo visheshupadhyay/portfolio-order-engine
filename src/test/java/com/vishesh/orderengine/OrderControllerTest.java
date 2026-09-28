@@ -28,9 +28,12 @@ import static org.hamcrest.Matchers.nullValue;
 @SpringBootTest
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
+/* Controller contract tests cover validation before storage work and ensure path,
+ * JSON, and query input return predictable client-facing errors. */
 public class OrderControllerTest {
     @Autowired
     private MockMvc mockMvc;
+    private String orderWithMoreThanCharLimit = "x".repeat(101);
 
     private RequestPostProcessor readerCredentials() {
         return httpBasic("order-reader", "reader-password");
@@ -47,6 +50,14 @@ public class OrderControllerTest {
                 .andExpect(jsonPath("$.id").value("order-101"))
                 .andExpect(jsonPath("$.status").value("CREATED"));
 
+    }
+
+    @Test
+    public void returnBadRequestForGetOrdersExceedingCharLimit() throws Exception {
+        mockMvc.perform(get("/orders/" + orderWithMoreThanCharLimit).with(readerCredentials()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Order id must be less than 101 char limit"));
     }
 
     @Test
@@ -107,6 +118,16 @@ public class OrderControllerTest {
     }
 
     @Test
+    public void returnBadRequestForPostOrdersExceedingCharLimit() throws Exception {
+        mockMvc.perform(post("/orders/" + orderWithMoreThanCharLimit + "/pay").with(writerCredentials())
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Order id must be less than 101 char limit"));
+    }
+
+    @Test
     public void returnsPaidForAlreadyPaidOrder() throws Exception {
         mockMvc.perform(post("/orders/order-102/pay").with(writerCredentials())
                 .with(csrf())
@@ -118,7 +139,8 @@ public class OrderControllerTest {
 
     @Test
     public void returnsAllImportedOrders() throws Exception {
-        // The default profile returns the same page-response shape as JDBC and JPA profiles.
+        // The default profile returns the same page-response shape as JDBC and JPA
+        // profiles.
         mockMvc.perform(get("/orders").with(readerCredentials()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
@@ -154,6 +176,26 @@ public class OrderControllerTest {
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(1))
                 .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    public void returnBadRequestResponseForNonNumericPageValues() throws Exception {
+        mockMvc.perform(get("/orders").with(readerCredentials())
+                .param("page", "abc")
+                .param("size", "1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid page: abc"));
+    }
+
+    @Test
+    public void returnBadRequestResponseForNonNumericSizeValues() throws Exception {
+        mockMvc.perform(get("/orders").with(readerCredentials())
+                .param("page", "0")
+                .param("size", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid size: abc"));
     }
 
     @Test
@@ -208,6 +250,17 @@ public class OrderControllerTest {
                 .andExpect(jsonPath("$.page").value(5))
                 .andExpect(jsonPath("$.size").value(1))
                 .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    public void returnBadRequestForGetOrdersCursorExceedingCharLimit() throws Exception {
+        mockMvc.perform(get("/orders/cursor")
+                .with(readerCredentials())
+                .param("size", "1")
+                .param("after", orderWithMoreThanCharLimit))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Order id must be less than 101 char limit"));
     }
 
     @Test
@@ -275,4 +328,60 @@ public class OrderControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("size must be less than or equal to 100"));
     }
+
+    @Test
+    public void rejectsOrderWhereIdIsGreaterThanLimit() throws Exception {
+        mockMvc.perform(post("/orders").with(writerCredentials())
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                        """
+                                    {"id":"order-123123123123231231231232312312312323123123123231231231232312312312323123123123231231231232312312312323123123123123123123"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("id must not be greater than 100 characters"));
+    }
+
+    @Test
+    public void acceptsOrderWhereIdIsWithinCharLimit() throws Exception {
+        mockMvc.perform(post("/orders")
+                .with(writerCredentials())
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                        """
+                                    {"id":"order-1231231231232312312312323123123123231231231232312312312323123123123231231231232312312345678905"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(
+                        "order-1231231231232312312312323123123123231231231232312312312323123123123231231231232312312345678905"));
+    }
+
+    @Test
+    public void rejectsOrderWhereCursorAfterIsIncorrect() throws Exception {
+        mockMvc.perform(get("/orders/cursor")
+                .with(readerCredentials())
+                .param("size", "1")
+                .param("after", "   "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Order id cannot be blank"));
+    }
+
+    @Test
+    public void rejectsOrderWhereJsonIsIncorrect() throws Exception {
+        mockMvc.perform(post("/orders").with(writerCredentials())
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                        """
+                                    {"id":order-12312",
+                                    "status"":: XYZ}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid JSON"));
+    }
+
 }

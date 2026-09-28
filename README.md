@@ -11,7 +11,7 @@ The project is deliberately built in small, tested steps. It demonstrates backen
 - Consistent JSON errors for validation failures, missing orders, duplicates, invalid query values, invalid pagination, and temporary database outages (`503` without SQL details).
 - HTTP Basic authentication, role-based read/write access, CSRF protection for state-changing requests, and an explicit CORS policy.
 - OpenAPI documentation and Swagger UI for the order API.
-- PostgreSQL `orders` and `order_items` tables with primary keys, check constraints, foreign keys, and an indexed item-to-order relationship.
+- Flyway versioned migrations create the PostgreSQL `orders`, `order_items`, and `outbox_events` schema automatically.
 - Atomic duplicate-safe creation with `INSERT ... ON CONFLICT DO NOTHING` and atomic `CREATED -> PAID` payment transitions.
 - JDBC and JPA/Hibernate implementations behind one `OrderRepository` domain contract.
 - JPA mappings for one order to many order items, cascades, lazy loading, targeted entity-graph fetches, JPQL fetch joins, database-side pagination, and optimistic locking with `@Version`.
@@ -44,6 +44,9 @@ in-memory     JDBC profile       JPA profile
                              PostgreSQL
 
 Committed PENDING outbox event
+            |
+            v
+PROCESSING claim (lease + token)
             |
             v
 OutboxEventDeliveryWorker --> notification provider
@@ -103,13 +106,14 @@ Paying an order does not call the external notification provider inside the paym
 
 - If the transaction commits, both the paid order and its pending notification event are durable.
 - If it rolls back, neither change remains in PostgreSQL.
-- `OutboxEventDeliveryWorker` later fetches due `PENDING` events, sends the notification, and marks successful events `SENT`.
+- `OutboxEventDeliveryWorker` atomically claims due `PENDING` events as `PROCESSING`, sends the notification, and marks successful events `SENT`. PostgreSQL uses `FOR UPDATE SKIP LOCKED`, so concurrent application instances claim different rows rather than delivering one event together.
+- A claim has a five-minute lease (`claimed_at`) and a unique `claim_token`. A later poll releases an abandoned lease after a crash; completion updates require the same token, so a stale worker cannot update a reclaimed event.
 - A delivery failure records the error, increments `attempt_count`, and retries one minute later. After the third failed delivery attempt, the event becomes `FAILED` instead of retrying forever.
 - The default profile uses `InMemoryOutboxEventRepository`; both `postgres` and `jpa` profiles use `JdbcOutboxEventRepository` against PostgreSQL. The JPA order adapter and JDBC outbox write were tested together for commit and rollback behavior.
 
 The scheduler is deliberately opt-in. Set `OUTBOX_DELIVERY_ENABLED=true` in a deployed environment to enable its five-second polling loop. It stays disabled by default so test-created `PENDING` rows cannot be consumed by a background job.
 
-This is an **at-least-once** delivery design. If the process stops after a notification provider accepts a message but before the row is marked `SENT`, a later retry can send a duplicate. A real provider integration should use an idempotency key or customer-facing deduplication.
+This is an **at-least-once** delivery design. If the process stops after a notification provider accepts a message but before the row is marked `SENT`, a later retry can send a duplicate. The next reliability milestone adds an external-provider idempotency key so that retry can be safely deduplicated.
 
 ## Run locally
 
@@ -117,7 +121,7 @@ This is an **at-least-once** delivery design. If the process stops after a notif
 
 - Java 21
 - Maven
-- PostgreSQL with an `order_engine` database and the project `orders`, `order_items`, and `outbox_events` schema
+- PostgreSQL with an empty `order_engine` database; Flyway creates the project schema on first startup
 - A `DB_PASSWORD` environment variable containing the local PostgreSQL password
 
 Run all tests:

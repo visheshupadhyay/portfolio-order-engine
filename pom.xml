@@ -90,5 +90,15 @@
         <artifactId>postgresql</artifactId>
         <scope>runtime</scope>
     </dependency>
+    <dependency>
+        <groupId>org.flywaydb</groupId>
+        <!-- PostgreSQL-specific Flyway support executes the versioned SQL files at startup. -->
+        <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <!-- Boot discovers db/migration/V* files and records applied versions. -->
+        <artifactId>spring-boot-starter-flyway</artifactId>
+    </dependency>
 </dependencies>
 </project>

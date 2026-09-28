@@ -11,6 +11,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /* Unit tests for the worker policy: send, retry, stop after three failures, and continue a batch. */
+/* Worker-flow tests prove a claimed event reaches SENT, retries/fails correctly,
+ * and recovers a lease abandoned by a simulated crash. */
 public class OutboxEventDeliveryWorkerTest {
 
     @Test
@@ -30,7 +32,7 @@ public class OutboxEventDeliveryWorkerTest {
         assertEquals(OutboxEventStatus.SENT, inMemoryOutboxEventRepository.findAll().get(0).status());
         assertEquals(now, inMemoryOutboxEventRepository.findAll().get(0).sentAt());
         assertNull(inMemoryOutboxEventRepository.findAll().get(0).lastError());
-        assertEquals(0, inMemoryOutboxEventRepository.findPendingReadyForDelivery(now.plusMinutes(1), 10).size());
+        assertEquals(0, inMemoryOutboxEventRepository.claimPendingReadyForDelivery(now.plusMinutes(1), 10).size());
     }
 
     @Test
@@ -50,7 +52,7 @@ public class OutboxEventDeliveryWorkerTest {
         assertEquals("SMS provider unavailable", event.lastError());
         assertNull(event.sentAt());
         assertEquals(now.plusMinutes(1), event.nextAttemptAt());
-        assertEquals(0, inMemoryOutboxEventRepository.findPendingReadyForDelivery(now, 10).size());
+        assertEquals(0, inMemoryOutboxEventRepository.claimPendingReadyForDelivery(now, 10).size());
 
     }
 
@@ -62,19 +64,26 @@ public class OutboxEventDeliveryWorkerTest {
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(errorNotifier);
         OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
                 inMemoryOutboxEventRepository, orderPaidNotificationService);
-        Long eventId = inMemoryOutboxEventRepository.findAll().get(0).id();
         LocalDateTime now = LocalDateTime.now();
-        // Arrange two previous failed attempts; the next provider failure is attempt three.
-        inMemoryOutboxEventRepository.rescheduleAfterFailure(eventId, "first failure", now.minusMinutes(2));
-        inMemoryOutboxEventRepository.rescheduleAfterFailure(eventId, "second failure", now.minusMinutes(1));
-
-        assertDoesNotThrow(() -> outboxEventDeliveryWorker.deliverReadyEvents(now, 10));
+        // Arrange two previous failed attempts; the next provider failure is attempt
+        // three.
+        LocalDateTime firstClaimAt = LocalDateTime.now();
+        LocalDateTime firstRetryAt = firstClaimAt.plusMinutes(1);
+        OutboxEvent event1 = inMemoryOutboxEventRepository.claimPendingReadyForDelivery(firstClaimAt.plusSeconds(1), 10)
+                .get(0);
+        inMemoryOutboxEventRepository.rescheduleAfterFailure(event1.id(), event1.claimToken(), "first failure",
+                firstRetryAt);
+        OutboxEvent event2 = inMemoryOutboxEventRepository
+                .claimPendingReadyForDelivery(firstRetryAt.plusSeconds(10), 10).get(0);
+        inMemoryOutboxEventRepository.rescheduleAfterFailure(event2.id(), event2.claimToken(), "second failure",
+                firstRetryAt.plusMinutes(2));
+        assertDoesNotThrow(() -> outboxEventDeliveryWorker.deliverReadyEvents(firstRetryAt.plusMinutes(3), 10));
         OutboxEvent returnEvent = inMemoryOutboxEventRepository.findAll().get(0);
         assertEquals(OutboxEventStatus.FAILED, returnEvent.status());
         assertEquals(3, returnEvent.attemptCount());
         assertEquals("SMS provider unavailable", returnEvent.lastError());
         assertNull(returnEvent.sentAt());
-        assertEquals(0, inMemoryOutboxEventRepository.findPendingReadyForDelivery(now.plusMinutes(10), 10).size());
+        assertEquals(0, inMemoryOutboxEventRepository.claimPendingReadyForDelivery(now.plusMinutes(10), 10).size());
     }
 
     @Test
@@ -88,7 +97,8 @@ public class OutboxEventDeliveryWorkerTest {
                 inMemoryOutboxEventRepository, orderPaidNotificationService);
 
         LocalDateTime now = LocalDateTime.now();
-        // The catch block is inside the worker loop, so order B must still be processed after A fails.
+        // The catch block is inside the worker loop, so order B must still be processed
+        // after A fails.
         assertDoesNotThrow(() -> outboxEventDeliveryWorker.deliverReadyEvents(now, 10));
         List<OutboxEvent> events = inMemoryOutboxEventRepository.findAll();
         OutboxEvent failedEvent = events.stream()
@@ -110,6 +120,36 @@ public class OutboxEventDeliveryWorkerTest {
         assertEquals("Order is paid orderID:worker-order-b", errorNotifier.getMessage());
 
     }
+
+    @Test
+    public void releasesExpiredClaimAndDeliversEventDuringWorkerRun() {
+        InMemoryOutboxEventRepository inMemoryOutboxEventRepository = new InMemoryOutboxEventRepository();
+        inMemoryOutboxEventRepository.enqueueOrderPaid("worker-order-a");
+        TestingNotifier testingNotifier = new TestingNotifier("Success");
+        OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(testingNotifier);
+        OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
+                inMemoryOutboxEventRepository, orderPaidNotificationService);
+        
+        LocalDateTime workerRunAt = LocalDateTime.now().plusMinutes(10);
+        LocalDateTime oldClaimAt = workerRunAt.minusMinutes(6);
+        OutboxEvent manualEvent = inMemoryOutboxEventRepository.claimPendingReadyForDelivery(oldClaimAt, 1).get(0);
+        assertNotNull(manualEvent);
+        assertEquals(OutboxEventStatus.PROCESSING, manualEvent.status());
+        assertNotNull(manualEvent.claimToken());
+        outboxEventDeliveryWorker.deliverReadyEvents(workerRunAt, 10);
+
+        assertEquals("Order is paid orderID:worker-order-a",testingNotifier.getMessage());
+        OutboxEvent passedEvent = inMemoryOutboxEventRepository.findAll().stream()
+                .filter(event -> event.orderId().equals("worker-order-a"))
+                .findFirst()
+                .orElseThrow();  
+        assertEquals(OutboxEventStatus.SENT, passedEvent.status());
+        assertEquals(workerRunAt, passedEvent.sentAt());
+        assertNull(passedEvent.claimToken());
+        assertNull(passedEvent.claimedAt());
+        assertEquals(0,passedEvent.attemptCount());
+    }
+
 }
 
 class ErrorNotifier extends AbstractNotifier {
