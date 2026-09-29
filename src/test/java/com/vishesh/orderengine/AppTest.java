@@ -1,5 +1,7 @@
 package com.vishesh.orderengine;
 
+import com.vishesh.orderengine.order.*;
+
 /*
  * Legacy helper test: App.message() remains covered separately from the Spring
  * Boot startup behavior tested by OrderEngineApplicationTest.

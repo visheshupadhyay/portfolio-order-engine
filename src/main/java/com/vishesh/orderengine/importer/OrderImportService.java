@@ -1,0 +1,35 @@
+package com.vishesh.orderengine.importer;
+
+import com.vishesh.orderengine.*;
+
+/*
+ * Application service that coordinates importing and saving orders. Constructor
+ * injection lets Spring provide its importer and repository instead of App
+ * creating those dependencies manually.
+ */
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+
+import com.vishesh.orderengine.order.Order;
+import com.vishesh.orderengine.order.OrderRepository;
+
+@Service 
+public class OrderImportService {
+    private final OrderFileImporter orderFileImporter;
+    private final OrderRepository orderRepository;
+
+    OrderImportService(OrderFileImporter orderFileImporter, OrderRepository orderRepository) {
+        this.orderFileImporter = orderFileImporter;
+        this.orderRepository = orderRepository;
+    }
+
+    public void importAndSave(Path inputFile) throws IOException {
+        List<Order> orders = orderFileImporter.importOrders(inputFile);
+        for (Order order: orders) {
+            orderRepository.save(order);
+        }
+    }
+}

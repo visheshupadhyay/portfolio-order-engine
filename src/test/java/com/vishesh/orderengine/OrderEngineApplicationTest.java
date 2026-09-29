@@ -1,5 +1,7 @@
 package com.vishesh.orderengine;
 
+import com.vishesh.orderengine.order.*;
+
 /*
  * Spring Boot smoke test: @SpringBootTest starts App and injects a running
  * ApplicationContext instead of this test manually building one.
