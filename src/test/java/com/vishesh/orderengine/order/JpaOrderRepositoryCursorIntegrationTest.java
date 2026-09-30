@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -16,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("jpa")
 @Transactional
 /* JPA Slice-backed cursor contract: nextAfter exists only while another slice is available. */
-public class JpaOrderRepositoryCursorIntegrationTest {
+public class JpaOrderRepositoryCursorIntegrationTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private OrderRepository orderRepository;
     @Autowired

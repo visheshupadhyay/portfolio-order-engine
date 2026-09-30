@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.api;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import com.vishesh.orderengine.order.*;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -25,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("postgres")
 @Transactional
 /* Secured API proof that GET /orders reaches handwritten JDBC pagination SQL. */
-public class PostgresOrderPaginationApiTest {
+public class PostgresOrderPaginationApiTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
     @Autowired

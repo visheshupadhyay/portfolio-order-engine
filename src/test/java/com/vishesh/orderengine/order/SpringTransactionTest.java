@@ -1,8 +1,9 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-
 
 import java.util.UUID;
 
@@ -18,7 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 // insert must leave no committed row.
 @SpringBootTest
 @ActiveProfiles("postgres")
-public class SpringTransactionTest {
+public class SpringTransactionTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private TransactionTemplate transactionTemplate;
     @Autowired

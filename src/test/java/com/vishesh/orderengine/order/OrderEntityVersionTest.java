@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.UUID;
@@ -17,7 +19,7 @@ import jakarta.persistence.PersistenceContext;
 @SpringBootTest
 @ActiveProfiles("postgres")
 @Transactional
-public class OrderEntityVersionTest {
+public class OrderEntityVersionTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private OrderEntityJpaRepository orderEntityJpaRepository;
 

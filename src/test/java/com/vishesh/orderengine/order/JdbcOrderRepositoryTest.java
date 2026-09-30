@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,7 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
 // generated ID is deleted afterwards so tests do not share persistent state.
 @ActiveProfiles("postgres")
 @SpringBootTest
-public class JdbcOrderRepositoryTest {
+public class JdbcOrderRepositoryTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
     private String savedOrderId;

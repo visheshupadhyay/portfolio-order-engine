@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.api;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import com.vishesh.orderengine.order.*;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -25,7 +27,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("postgres")
-public class PostgresOrderCreationApiTest {
+public class PostgresOrderCreationApiTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
     @Autowired

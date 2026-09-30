@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -16,7 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 // Separate TransactionTemplate calls create detached copies that simulate two requests.
 @SpringBootTest
 @ActiveProfiles("postgres")
-public class OrderEntityOptimisticLockingTest {
+public class OrderEntityOptimisticLockingTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private OrderEntityJpaRepository orderEntityJpaRepository;
 

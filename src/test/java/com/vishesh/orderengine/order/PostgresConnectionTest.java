@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import com.vishesh.orderengine.order.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -14,7 +16,7 @@ import org.springframework.test.context.ActiveProfiles;
 // credentials, and PostgreSQL connection can work together.
 @ActiveProfiles ("postgres")
 @SpringBootTest
-class PostgresConnectionTest {
+class PostgresConnectionTest  extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;

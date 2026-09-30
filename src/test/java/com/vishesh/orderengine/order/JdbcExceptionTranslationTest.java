@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.UUID;
@@ -15,7 +17,7 @@ import org.springframework.test.context.ActiveProfiles;
 // Spring hides PostgreSQL driver details behind portable DataAccessException types.
 @SpringBootTest
 @ActiveProfiles("postgres")
-public class JdbcExceptionTranslationTest {
+public class JdbcExceptionTranslationTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
     private String savedOrderId;

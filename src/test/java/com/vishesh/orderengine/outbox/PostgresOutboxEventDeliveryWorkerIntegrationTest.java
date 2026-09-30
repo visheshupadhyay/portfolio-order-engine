@@ -1,6 +1,6 @@
 package com.vishesh.orderengine.outbox;
 
-import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,6 +23,8 @@ import com.vishesh.orderengine.order.Order;
 import com.vishesh.orderengine.notification.OrderPaidNotificationService;
 import com.vishesh.orderengine.order.OrderStatus;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 @SpringBootTest
 @ActiveProfiles("postgres")
 /* End-to-end worker tests against persisted PostgreSQL outbox rows. */
@@ -31,7 +33,7 @@ import com.vishesh.orderengine.order.OrderStatus;
  * and
  * lease-recovery lifecycle as the in-memory tests.
  */
-public class PostgresOutboxEventDeliveryWorkerIntegrationTest {
+public class PostgresOutboxEventDeliveryWorkerIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
@@ -78,8 +80,11 @@ public class PostgresOutboxEventDeliveryWorkerIntegrationTest {
         PostgresTestingNotifier notifier = new PostgresTestingNotifier("TEST");
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(notifier);
         // Use the real JDBC repository but a deterministic failing notifier.
-        OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(outboxEventRepository,
-                orderPaidNotificationService, deliveryProperties);
+        OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
+                outboxEventRepository,
+                orderPaidNotificationService,
+                deliveryProperties,
+                new OutboxDeliveryMetrics(new SimpleMeterRegistry()));
         savedOrderId = "postgres-outbox-delivery-test-" + UUID.randomUUID();
         jdbcTemplate.update("INSERT into orders (id, status) VALUES (?,?)", savedOrderId, OrderStatus.CREATED.name());
         jdbcTemplate.update("INSERT into outbox_events (order_id) VALUES (?)", savedOrderId);
@@ -130,7 +135,8 @@ public class PostgresOutboxEventDeliveryWorkerIntegrationTest {
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(
                 postgresTestNotifier);
         OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
-                outboxEventRepository, orderPaidNotificationService, deliveryProperties);
+                outboxEventRepository, orderPaidNotificationService, deliveryProperties,
+                new OutboxDeliveryMetrics(new SimpleMeterRegistry()));
 
         LocalDateTime firstClaimAt = LocalDateTime.now().withNano(0);
         LocalDateTime workerRunAt = firstClaimAt.plusMinutes(6);

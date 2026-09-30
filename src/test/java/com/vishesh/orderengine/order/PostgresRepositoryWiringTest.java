@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import com.vishesh.orderengine.order.*;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -13,7 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 // JdbcOrderRepository can be constructed in isolation.
 @ActiveProfiles("postgres")
 @SpringBootTest 
-public class PostgresRepositoryWiringTest {
+public class PostgresRepositoryWiringTest  extends AbstractPostgresIntegrationTest {
     @Autowired 
     private OrderRepository orderRepository;
 

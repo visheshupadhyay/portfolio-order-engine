@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("postgres")
 @Transactional
 /* Verifies real LIMIT/OFFSET plus COUNT behavior; the transaction rolls back fixture rows. */
-public class JdbcOrderRepositoryPaginationTest {
+public class JdbcOrderRepositoryPaginationTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 

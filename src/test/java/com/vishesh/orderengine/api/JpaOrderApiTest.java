@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.api;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import com.vishesh.orderengine.order.*;
 
 import static org.hamcrest.Matchers.hasSize;
@@ -36,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("jpa")
-public class JpaOrderApiTest {
+public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
     @Autowired

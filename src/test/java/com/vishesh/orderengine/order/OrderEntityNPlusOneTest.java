@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
@@ -22,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest("spring.jpa.properties.hibernate.generate_statistics=true")
 @ActiveProfiles("postgres")
 @Transactional
-public class OrderEntityNPlusOneTest {
+public class OrderEntityNPlusOneTest  extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private OrderEntityJpaRepository orderEntityJpaRepository;

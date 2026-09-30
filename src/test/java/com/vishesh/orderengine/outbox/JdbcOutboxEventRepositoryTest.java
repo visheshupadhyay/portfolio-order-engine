@@ -1,6 +1,6 @@
 package com.vishesh.orderengine.outbox;
 
-import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.DynamicTest.stream;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -26,7 +25,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
-
 import com.vishesh.orderengine.order.Order;
 import com.vishesh.orderengine.order.OrderStatus;
 
@@ -36,9 +34,11 @@ import com.vishesh.orderengine.order.OrderStatus;
  * PostgreSQL contract tests: defaults, due-event selection, retry, success, and
  * terminal failure.
  */
-/* PostgreSQL contract tests: they prove database-level claiming is safe across
- * concurrent threads, unlike an in-JVM synchronized-only solution. */
-public class JdbcOutboxEventRepositoryTest {
+/*
+ * PostgreSQL contract tests: they prove database-level claiming is safe across
+ * concurrent threads, unlike an in-JVM synchronized-only solution.
+ */
+public class JdbcOutboxEventRepositoryTest extends AbstractPostgresIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 

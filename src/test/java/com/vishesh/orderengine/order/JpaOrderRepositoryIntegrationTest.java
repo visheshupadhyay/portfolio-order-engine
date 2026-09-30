@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -18,13 +20,13 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @ActiveProfiles("jpa")
 @Transactional
-public class JpaOrderRepositoryIntegrationTest {
+public class JpaOrderRepositoryIntegrationTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private OrderRepository orderRepository;
 
     @Test
     public void usesJpaAdapterForAtomicOrderOperations() {
-        assertInstanceOf(JpaOrderRepository.class,orderRepository);
+        assertInstanceOf(JpaOrderRepository.class, orderRepository);
         String savedOrderId = "jpa-order-repository-integration-test-" + UUID.randomUUID();
         boolean orderCreated = orderRepository.createIfAbsent(new Order(savedOrderId));
         assertTrue(orderCreated); // First insert wins the atomic create decision.
@@ -40,6 +42,6 @@ public class JpaOrderRepositoryIntegrationTest {
         assertEquals(OrderStatus.PAID, orderRepository.findOrderById(savedOrderId).get().getStatus());
         orderRepository.save(new Order(savedOrderId, OrderStatus.CREATED)); // Verify UPSERT update path.
         assertEquals(OrderStatus.CREATED, orderRepository.findOrderById(savedOrderId).get().getStatus());
-        assertTrue(orderRepository.findAll().stream().anyMatch(order-> order.getId().equals(savedOrderId)));
+        assertTrue(orderRepository.findAll().stream().anyMatch(order -> order.getId().equals(savedOrderId)));
     }
 }

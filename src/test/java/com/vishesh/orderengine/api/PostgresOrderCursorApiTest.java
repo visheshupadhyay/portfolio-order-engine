@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.api;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import com.vishesh.orderengine.order.*;
 
 import static org.hamcrest.Matchers.hasSize;
@@ -25,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("postgres")
 @Transactional
 /* Secured API proof that cursor continuation reaches the JDBC/PostgreSQL implementation. */
-public class PostgresOrderCursorApiTest {
+public class PostgresOrderCursorApiTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
     @Autowired

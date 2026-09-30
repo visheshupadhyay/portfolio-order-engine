@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -15,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("postgres")
 @Transactional
 /* Verifies PostgreSQL cursor continuation and filtered cursor continuation without total counts. */
-public class JdbcOrderRepositoryCursorTest {
+public class JdbcOrderRepositoryCursorTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 

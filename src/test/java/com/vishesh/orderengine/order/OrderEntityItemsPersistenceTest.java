@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,7 +22,7 @@ import jakarta.persistence.PersistenceContext;
 @SpringBootTest
 @ActiveProfiles("postgres")
 @Transactional
-public class OrderEntityItemsPersistenceTest {
+public class OrderEntityItemsPersistenceTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private OrderEntityJpaRepository orderEntityJpaRepository;
 

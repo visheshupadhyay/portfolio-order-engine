@@ -39,6 +39,23 @@
         <artifactId>spring-boot-starter-test</artifactId>
         <scope>test</scope>
     </dependency>
+
+    <!-- Starts disposable PostgreSQL containers during tests, so database tests
+         do not depend on a developer's local database or its data. -->
+    <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-postgresql</artifactId>
+        <version>2.0.5</version>
+        <scope>test</scope>
+    </dependency>
+
+    <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-junit-jupiter</artifactId>
+        <version>2.0.5</version>
+        <scope>test</scope>
+    </dependency>
+
     <!-- Adds REST controllers, JSON request/response conversion, and the embedded web server. -->
     <dependency>
         <groupId>org.springframework.boot</groupId>
@@ -99,6 +116,15 @@
         <groupId>org.springframework.boot</groupId>
         <!-- Boot discovers db/migration/V* files and records applied versions. -->
         <artifactId>spring-boot-starter-flyway</artifactId>
+    </dependency>
+    <!-- Provides production endpoints such as /actuator/health and metric support. -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
 </dependencies>
 </project>

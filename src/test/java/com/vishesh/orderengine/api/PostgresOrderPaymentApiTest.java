@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.api;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import com.vishesh.orderengine.order.*;
 
 import java.util.UUID;
@@ -26,7 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("postgres")
-public class PostgresOrderPaymentApiTest {
+public class PostgresOrderPaymentApiTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 

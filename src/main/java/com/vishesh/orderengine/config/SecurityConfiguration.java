@@ -33,6 +33,7 @@ public class SecurityConfiguration {
                 // Answer a browser's CORS preflight before authentication or controller routing.
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers("/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/orders/**").hasRole("ORDER_READER")
                         .requestMatchers(HttpMethod.POST, "/orders/**").hasRole("ORDER_WRITER")
                         .requestMatchers("/orders/**").authenticated()

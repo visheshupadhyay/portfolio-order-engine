@@ -1,6 +1,6 @@
 package com.vishesh.orderengine.order;
 
-import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -19,8 +19,11 @@ import com.vishesh.orderengine.outbox.OutboxEventStatus;
 
 @SpringBootTest
 @ActiveProfiles("postgres")
-/* Proves JDBC order changes and JDBC outbox rows commit/roll back as one PostgreSQL transaction. */
-public class PostgresOrderPaymentOutboxIntegrationTest {
+/*
+ * Proves JDBC order changes and JDBC outbox rows commit/roll back as one
+ * PostgreSQL transaction.
+ */
+public class PostgresOrderPaymentOutboxIntegrationTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private OrderPaymentService orderPaymentService;
     @Autowired
@@ -67,7 +70,8 @@ public class PostgresOrderPaymentOutboxIntegrationTest {
         }));
         Order reloadedOrder = orderRepository.findOrderById(saveOrderId).orElseThrow();
         assertEquals(OrderStatus.CREATED, reloadedOrder.getStatus());
-        Long rows = jdbcTemplate.queryForObject("Select count(*) from outbox_events where order_id=?", Long.class,saveOrderId);
+        Long rows = jdbcTemplate.queryForObject("Select count(*) from outbox_events where order_id=?", Long.class,
+                saveOrderId);
         assertEquals(0L, rows);
 
     }

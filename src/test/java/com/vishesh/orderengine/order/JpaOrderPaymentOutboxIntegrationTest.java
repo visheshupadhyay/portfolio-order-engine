@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import com.vishesh.orderengine.order.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,7 +25,7 @@ import com.vishesh.orderengine.outbox.OutboxEventStatus;
 @SpringBootTest
 @ActiveProfiles("jpa")
 /* Proves the JPA order adapter and JDBC outbox adapter still share one transaction boundary. */
-public class JpaOrderPaymentOutboxIntegrationTest {
+public class JpaOrderPaymentOutboxIntegrationTest  extends AbstractPostgresIntegrationTest {
     @Autowired
     private OrderPaymentService orderPaymentService;
     @Autowired

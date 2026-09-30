@@ -1,7 +1,5 @@
 package com.vishesh.orderengine.outbox;
 
-import com.vishesh.orderengine.order.*;
-
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -16,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import com.vishesh.orderengine.notification.OrderPaidNotificationService;
 import com.vishesh.orderengine.notification.AbstractNotifier;
 import com.vishesh.orderengine.order.Order;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /* Unit tests for the worker policy: send, retry, stop after three failures, and continue a batch. */
 /* Worker-flow tests prove a claimed event reaches SENT, retries/fails correctly,
@@ -35,8 +35,13 @@ public class OutboxEventDeliveryWorkerTest {
         inMemoryOutboxEventRepository.enqueueOrderPaid("worker-order-1");
         TestingNotifier testingNotifier = new TestingNotifier("TEST");
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(testingNotifier);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        OutboxDeliveryMetrics outboxDeliveryMetrics = new OutboxDeliveryMetrics(meterRegistry);
         OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
-                inMemoryOutboxEventRepository, orderPaidNotificationService, deliveryProperties);
+                inMemoryOutboxEventRepository,
+                orderPaidNotificationService,
+                deliveryProperties,
+                outboxDeliveryMetrics);
 
         LocalDateTime now = LocalDateTime.now();
         // A normally returning notifier call is the only path that may mark SENT.
@@ -47,6 +52,7 @@ public class OutboxEventDeliveryWorkerTest {
         assertEquals(now, inMemoryOutboxEventRepository.findAll().get(0).sentAt());
         assertNull(inMemoryOutboxEventRepository.findAll().get(0).lastError());
         assertEquals(0, inMemoryOutboxEventRepository.claimPendingReadyForDelivery(now.plusMinutes(1), 10).size());
+        assertEquals(1.0, meterRegistry.get("order.outbox.events.delivered").counter().count());
     }
 
     @Test
@@ -54,8 +60,14 @@ public class OutboxEventDeliveryWorkerTest {
         InMemoryOutboxEventRepository inMemoryOutboxEventRepository = new InMemoryOutboxEventRepository();
         ErrorNotifier errorNotifier = new ErrorNotifier("Error");
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(errorNotifier);
+
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        OutboxDeliveryMetrics outboxDeliveryMetrics = new OutboxDeliveryMetrics(meterRegistry);
         OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
-                inMemoryOutboxEventRepository, orderPaidNotificationService, deliveryProperties);
+                inMemoryOutboxEventRepository,
+                orderPaidNotificationService,
+                deliveryProperties,
+                outboxDeliveryMetrics);
         inMemoryOutboxEventRepository.enqueueOrderPaid("worker-order-1");
         LocalDateTime now = LocalDateTime.now();
         // Provider failure is captured as outbox state, not leaked to stop the worker.
@@ -67,6 +79,7 @@ public class OutboxEventDeliveryWorkerTest {
         assertNull(event.sentAt());
         assertEquals(now.plusMinutes(1), event.nextAttemptAt());
         assertEquals(0, inMemoryOutboxEventRepository.claimPendingReadyForDelivery(now, 10).size());
+        assertEquals(1, meterRegistry.get("order.outbox.events.retried").counter().count());
 
     }
 
@@ -76,8 +89,13 @@ public class OutboxEventDeliveryWorkerTest {
         inMemoryOutboxEventRepository.enqueueOrderPaid("worker-order-1");
         ErrorNotifier errorNotifier = new ErrorNotifier("Error");
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(errorNotifier);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        OutboxDeliveryMetrics outboxDeliveryMetrics = new OutboxDeliveryMetrics(meterRegistry);
         OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
-                inMemoryOutboxEventRepository, orderPaidNotificationService, deliveryProperties);
+                inMemoryOutboxEventRepository,
+                orderPaidNotificationService,
+                deliveryProperties,
+                outboxDeliveryMetrics);
         LocalDateTime now = LocalDateTime.now();
         // Arrange two previous failed attempts; the next provider failure is attempt
         // three.
@@ -98,6 +116,7 @@ public class OutboxEventDeliveryWorkerTest {
         assertEquals("SMS provider unavailable", returnEvent.lastError());
         assertNull(returnEvent.sentAt());
         assertEquals(0, inMemoryOutboxEventRepository.claimPendingReadyForDelivery(now.plusMinutes(10), 10).size());
+        assertEquals(1, meterRegistry.get("order.outbox.events.failed").counter().count());
     }
 
     @Test
@@ -107,8 +126,13 @@ public class OutboxEventDeliveryWorkerTest {
         inMemoryOutboxEventRepository.enqueueOrderPaid("worker-order-b");
         WorkerTestingNotifier errorNotifier = new WorkerTestingNotifier("Error");
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(errorNotifier);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        OutboxDeliveryMetrics outboxDeliveryMetrics = new OutboxDeliveryMetrics(meterRegistry);
         OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
-                inMemoryOutboxEventRepository, orderPaidNotificationService, deliveryProperties);
+                inMemoryOutboxEventRepository,
+                orderPaidNotificationService,
+                deliveryProperties,
+                outboxDeliveryMetrics);
 
         LocalDateTime now = LocalDateTime.now();
         // The catch block is inside the worker loop, so order B must still be processed
@@ -132,6 +156,9 @@ public class OutboxEventDeliveryWorkerTest {
         assertEquals(now, passedEvent.sentAt());
         assertNull(passedEvent.lastError());
         assertEquals("Order is paid orderID:worker-order-b", errorNotifier.getMessage());
+        assertEquals(1, meterRegistry.get("order.outbox.events.retried").counter().count());
+        assertEquals(1, meterRegistry.get("order.outbox.events.delivered").counter().count());
+        assertEquals(1L,meterRegistry.get("order.outbox.delivery.run").timer().count());
 
     }
 
@@ -141,8 +168,13 @@ public class OutboxEventDeliveryWorkerTest {
         inMemoryOutboxEventRepository.enqueueOrderPaid("worker-order-a");
         TestingNotifier testingNotifier = new TestingNotifier("Success");
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(testingNotifier);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        OutboxDeliveryMetrics outboxDeliveryMetrics = new OutboxDeliveryMetrics(meterRegistry);
         OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
-                inMemoryOutboxEventRepository, orderPaidNotificationService, deliveryProperties);
+                inMemoryOutboxEventRepository,
+                orderPaidNotificationService,
+                deliveryProperties,
+                outboxDeliveryMetrics);
 
         LocalDateTime workerRunAt = LocalDateTime.now().plusMinutes(10);
         LocalDateTime oldClaimAt = workerRunAt.minusMinutes(6);
@@ -162,17 +194,21 @@ public class OutboxEventDeliveryWorkerTest {
         assertNull(passedEvent.claimToken());
         assertNull(passedEvent.claimedAt());
         assertEquals(0, passedEvent.attemptCount());
+        assertEquals(1, meterRegistry.get("order.outbox.events.delivered").counter().count());
+        assertEquals(1, meterRegistry.get("order.outbox.claims.released").counter().count());
     }
 
     @Test
     public void doesNotSendDuplicateNotificationWhenRecoveredEventIsRetried() {
         InMemoryOutboxEventRepository inMemoryOutboxEventRepository = new InMemoryOutboxEventRepository();
         inMemoryOutboxEventRepository.enqueueOrderPaid("worker-order-a");
-
         TestingNotifier testingNotifier = new TestingNotifier("Success");
         OrderPaidNotificationService orderPaidNotificationService = new OrderPaidNotificationService(testingNotifier);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        OutboxDeliveryMetrics outboxDeliveryMetrics = new OutboxDeliveryMetrics(meterRegistry);
         OutboxEventDeliveryWorker outboxEventDeliveryWorker = new OutboxEventDeliveryWorker(
-                inMemoryOutboxEventRepository, orderPaidNotificationService, deliveryProperties);
+                inMemoryOutboxEventRepository, orderPaidNotificationService, deliveryProperties,
+                outboxDeliveryMetrics);
 
         LocalDateTime firstClaimAt = LocalDateTime.now();
         LocalDateTime retryRunAt = firstClaimAt.plusMinutes(6);
@@ -190,6 +226,8 @@ public class OutboxEventDeliveryWorkerTest {
 
         assertEquals(OutboxEventStatus.SENT, passedEvent.status());
         assertEquals(0, passedEvent.attemptCount());
+        assertEquals(1.0, meterRegistry.get("order.outbox.claims.released").counter().count());
+        assertEquals(1.0, meterRegistry.get("order.outbox.events.delivered").counter().count());
     }
 
 }

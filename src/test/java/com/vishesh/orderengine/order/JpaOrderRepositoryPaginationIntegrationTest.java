@@ -1,5 +1,7 @@
 package com.vishesh.orderengine.order;
 
+import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
@@ -16,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("jpa")
 @Transactional
 /* Same page contract as JDBC, but through the profile-selected JPA adapter and Spring Data Page. */
-public class JpaOrderRepositoryPaginationIntegrationTest {
+public class JpaOrderRepositoryPaginationIntegrationTest  extends AbstractPostgresIntegrationTest {
     @Autowired 
     private OrderRepository orderRepository;
     @Autowired 
