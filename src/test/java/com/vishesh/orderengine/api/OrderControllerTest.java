@@ -1,6 +1,7 @@
 package com.vishesh.orderengine.api;
 
 import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.security.JwtTokenService;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,13 +12,15 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import org.springframework.http.HttpHeaders;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.Set;
+
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
@@ -30,24 +33,43 @@ import static org.hamcrest.Matchers.nullValue;
 @SpringBootTest
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
-/* Controller contract tests cover validation before storage work and ensure path,
- * JSON, and query input return predictable client-facing errors. */
+/*
+ * Controller contract tests cover validation before storage work and ensure
+ * path,
+ * JSON, and query input return predictable client-facing errors.
+ */
 public class OrderControllerTest {
     @Autowired
     private MockMvc mockMvc;
     private String orderWithMoreThanCharLimit = "x".repeat(101);
+    @Autowired
+    private JwtTokenService jwtTokenService;
 
-    private RequestPostProcessor readerCredentials() {
-        return httpBasic("order-reader", "reader-password");
+    private RequestPostProcessor readerToken() {
+        String token = jwtTokenService.issue(
+                "order-reader",
+                Set.of("ROLE_ORDER_READER"));
+
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 
-    private RequestPostProcessor writerCredentials() {
-        return httpBasic("order-writer", "writer-password");
+    private RequestPostProcessor writerToken() {
+        String token = jwtTokenService.issue(
+                "order-writer",
+                Set.of("ROLE_ORDER_WRITER"));
+
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 
     @Test
     public void returnsOrderForKnownId() throws Exception {
-        mockMvc.perform(get("/orders/order-101").with(readerCredentials()))
+        mockMvc.perform(get("/orders/order-101").with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("order-101"))
                 .andExpect(jsonPath("$.status").value("CREATED"));
@@ -56,7 +78,7 @@ public class OrderControllerTest {
 
     @Test
     public void returnBadRequestForGetOrdersExceedingCharLimit() throws Exception {
-        mockMvc.perform(get("/orders/" + orderWithMoreThanCharLimit).with(readerCredentials()))
+        mockMvc.perform(get("/orders/" + orderWithMoreThanCharLimit).with(readerToken()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message").value("Order id must be less than 101 char limit"));
@@ -64,7 +86,7 @@ public class OrderControllerTest {
 
     @Test
     public void returnsNotFoundForUnknownId() throws Exception {
-        mockMvc.perform(get("/orders/order-999").with(readerCredentials()))
+        mockMvc.perform(get("/orders/order-999").with(readerToken()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.message").value("Order not found: order-999"));
@@ -72,8 +94,7 @@ public class OrderControllerTest {
 
     @Test
     public void createsOrderForValidRequest() throws Exception {
-        mockMvc.perform(post("/orders").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders").with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                             {"id":"order-103"}
@@ -86,8 +107,7 @@ public class OrderControllerTest {
 
     @Test
     public void rejectsBlankOrderId() throws Exception {
-        mockMvc.perform(post("/orders").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders").with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                             {"id":" "}
@@ -99,8 +119,7 @@ public class OrderControllerTest {
 
     @Test
     public void rejectsDuplicateOrderId() throws Exception {
-        mockMvc.perform(post("/orders").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders").with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                             {"id":"order-101"}
@@ -111,8 +130,8 @@ public class OrderControllerTest {
 
     @Test
     public void marksCreatedOrderAsPaid() throws Exception {
-        mockMvc.perform(post("/orders/order-101/pay").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders/order-101/pay").with(writerToken())
+
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("order-101"))
@@ -121,8 +140,8 @@ public class OrderControllerTest {
 
     @Test
     public void returnBadRequestForPostOrdersExceedingCharLimit() throws Exception {
-        mockMvc.perform(post("/orders/" + orderWithMoreThanCharLimit + "/pay").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders/" + orderWithMoreThanCharLimit + "/pay").with(writerToken())
+
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
@@ -131,8 +150,8 @@ public class OrderControllerTest {
 
     @Test
     public void returnsPaidForAlreadyPaidOrder() throws Exception {
-        mockMvc.perform(post("/orders/order-102/pay").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders/order-102/pay").with(writerToken())
+
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(OrderStatus.PAID.name()))
@@ -143,7 +162,7 @@ public class OrderControllerTest {
     public void returnsAllImportedOrders() throws Exception {
         // The default profile returns the same page-response shape as JDBC and JPA
         // profiles.
-        mockMvc.perform(get("/orders").with(readerCredentials()))
+        mockMvc.perform(get("/orders").with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[*].id", containsInAnyOrder("order-101", "order-102")));
@@ -151,7 +170,7 @@ public class OrderControllerTest {
 
     @Test
     public void returnsAllPaidImportedOrders() throws Exception {
-        mockMvc.perform(get("/orders").with(readerCredentials()).param("status", "PAID"))
+        mockMvc.perform(get("/orders").with(readerToken()).param("status", "PAID"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].id").value("order-102"))
@@ -160,7 +179,7 @@ public class OrderControllerTest {
 
     @Test
     public void rejectsUnknownStatusFilter() throws Exception {
-        mockMvc.perform(get("/orders").with(readerCredentials()).param("status", "UNKNOWN"))
+        mockMvc.perform(get("/orders").with(readerToken()).param("status", "UNKNOWN"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message").value("Invalid status: UNKNOWN"));
@@ -168,7 +187,7 @@ public class OrderControllerTest {
 
     @Test
     public void returnsFirstPageOfOrders() throws Exception {
-        mockMvc.perform(get("/orders").with(readerCredentials())
+        mockMvc.perform(get("/orders").with(readerToken())
                 .param("page", "0")
                 .param("size", "1"))
                 .andExpect(status().isOk())
@@ -182,7 +201,7 @@ public class OrderControllerTest {
 
     @Test
     public void returnBadRequestResponseForNonNumericPageValues() throws Exception {
-        mockMvc.perform(get("/orders").with(readerCredentials())
+        mockMvc.perform(get("/orders").with(readerToken())
                 .param("page", "abc")
                 .param("size", "1"))
                 .andExpect(status().isBadRequest())
@@ -192,7 +211,7 @@ public class OrderControllerTest {
 
     @Test
     public void returnBadRequestResponseForNonNumericSizeValues() throws Exception {
-        mockMvc.perform(get("/orders").with(readerCredentials())
+        mockMvc.perform(get("/orders").with(readerToken())
                 .param("page", "0")
                 .param("size", "abc"))
                 .andExpect(status().isBadRequest())
@@ -202,7 +221,7 @@ public class OrderControllerTest {
 
     @Test
     public void rejectsNegativePage() throws Exception {
-        mockMvc.perform(get("/orders").with(readerCredentials()).param("page", "-1").param("size", "1"))
+        mockMvc.perform(get("/orders").with(readerToken()).param("page", "-1").param("size", "1"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message")
@@ -211,7 +230,7 @@ public class OrderControllerTest {
 
     @Test
     public void rejectsNonPositivePageSize() throws Exception {
-        mockMvc.perform(get("/orders").with(readerCredentials()).param("page", "0").param("size", "0"))
+        mockMvc.perform(get("/orders").with(readerToken()).param("page", "0").param("size", "0"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message")
@@ -223,7 +242,7 @@ public class OrderControllerTest {
         mockMvc.perform(get("/orders")
                 .param("page", "0")
                 .param("size", "101")
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message").value("size must be less than or equal to 100"));
@@ -234,7 +253,7 @@ public class OrderControllerTest {
         mockMvc.perform(get("/orders")
                 .param("page", "0")
                 .param("size", "100")
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.page").value(0))
@@ -244,7 +263,7 @@ public class OrderControllerTest {
     @Test
     public void returnsEmptyContentForPageBeyondAvailableOrders() throws Exception {
         mockMvc.perform(get("/orders")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("page", "5")
                 .param("size", "1"))
                 .andExpect(status().isOk())
@@ -257,7 +276,7 @@ public class OrderControllerTest {
     @Test
     public void returnBadRequestForGetOrdersCursorExceedingCharLimit() throws Exception {
         mockMvc.perform(get("/orders/cursor")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("size", "1")
                 .param("after", orderWithMoreThanCharLimit))
                 .andExpect(status().isBadRequest())
@@ -268,7 +287,7 @@ public class OrderControllerTest {
     @Test
     public void returnsFirstCursorBatchOfOrders() throws Exception {
         mockMvc.perform(get("/orders/cursor")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("size", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
@@ -280,7 +299,7 @@ public class OrderControllerTest {
     @Test
     public void returnsNextCursorBatchAfterProvidedId() throws Exception {
         mockMvc.perform(get("/orders/cursor")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("size", "1")
                 .param("after", "order-101"))
                 .andExpect(status().isOk())
@@ -293,7 +312,7 @@ public class OrderControllerTest {
     @Test
     public void returnsCursorBatchFilteredByStatus() throws Exception {
         mockMvc.perform(get("/orders/cursor")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("size", "1")
                 .param("status", OrderStatus.PAID.name()))
                 .andExpect(status().isOk())
@@ -306,7 +325,7 @@ public class OrderControllerTest {
     @Test
     public void returnsCursorBatchFilteredByStatusAfterProvidedId() throws Exception {
         mockMvc.perform(get("/orders/cursor")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("size", "1")
                 .param("after", "order-101")
                 .param("status", OrderStatus.PAID.name()))
@@ -320,12 +339,12 @@ public class OrderControllerTest {
     @Test
     public void guardTests() throws Exception {
         mockMvc.perform(get("/orders/cursor")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("size", "0"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("size must be greater than 0"));
         mockMvc.perform(get("/orders/cursor")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("size", "101"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("size must be less than or equal to 100"));
@@ -333,8 +352,7 @@ public class OrderControllerTest {
 
     @Test
     public void rejectsOrderWhereIdIsGreaterThanLimit() throws Exception {
-        mockMvc.perform(post("/orders").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders").with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                         """
@@ -348,8 +366,7 @@ public class OrderControllerTest {
     @Test
     public void acceptsOrderWhereIdIsWithinCharLimit() throws Exception {
         mockMvc.perform(post("/orders")
-                .with(writerCredentials())
-                .with(csrf())
+                .with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                         """
@@ -363,7 +380,7 @@ public class OrderControllerTest {
     @Test
     public void rejectsOrderWhereCursorAfterIsIncorrect() throws Exception {
         mockMvc.perform(get("/orders/cursor")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("size", "1")
                 .param("after", "   "))
                 .andExpect(status().isBadRequest())
@@ -373,8 +390,7 @@ public class OrderControllerTest {
 
     @Test
     public void rejectsOrderWhereJsonIsIncorrect() throws Exception {
-        mockMvc.perform(post("/orders").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders").with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                         """

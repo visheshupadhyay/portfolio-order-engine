@@ -36,8 +36,8 @@ import jakarta.validation.Valid;
  * controller behavior or replace SecurityConfiguration's enforcement.
  */
 
-// Applies the named OpenAPI Basic-auth scheme to every order operation in the docs.
-@SecurityRequirement(name = "basicAuth")
+// Applies the named OpenAPI Bearer JWT scheme to every order operation in the docs.
+@SecurityRequirement(name = "bearerAuth")
 @Tag(name = "Orders", description = "Create, find, list, and pay orders.")
 @RestController
 @RequestMapping("/orders")

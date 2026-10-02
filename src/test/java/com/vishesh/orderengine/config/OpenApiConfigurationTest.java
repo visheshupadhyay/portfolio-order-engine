@@ -1,7 +1,5 @@
 package com.vishesh.orderengine.config;
 
-import com.vishesh.orderengine.order.*;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -91,17 +89,20 @@ public class OpenApiConfigurationTest {
 	}
 
 	@Test
-	public void documentsBasicAuthenticationForOrderEndpoints() throws Exception {
+	public void documentsBearerAuthenticationForOrderEndpoints() throws Exception {
 		mockMvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath(
-						"$['components']['securitySchemes']['basicAuth']['type']")
+						"$['components']['securitySchemes']['bearerAuth']['type']")
 						.value("http"))
 				.andExpect(jsonPath(
-						"$['components']['securitySchemes']['basicAuth']['scheme']")
-						.value("basic"))
+						"$['components']['securitySchemes']['bearerAuth']['scheme']")
+						.value("bearer"))
 				.andExpect(jsonPath(
-						"$['paths']['/orders/{id}']['get']['security'][0]['basicAuth']")
+						"$['components']['securitySchemes']['bearerAuth']['bearerFormat']")
+						.value("JWT"))
+				.andExpect(jsonPath(
+						"$['paths']['/orders/{id}']['get']['security'][0]['bearerAuth']")
 						.exists());
 	}
 

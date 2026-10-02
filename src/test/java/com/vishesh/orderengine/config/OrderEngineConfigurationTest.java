@@ -1,7 +1,5 @@
 package com.vishesh.orderengine.config;
 
-import com.vishesh.orderengine.order.*;
-
 /*
  * Boot integration revision: checks component discovery, default singleton
  * scope, qualified notifier wiring, and property-backed Path creation.

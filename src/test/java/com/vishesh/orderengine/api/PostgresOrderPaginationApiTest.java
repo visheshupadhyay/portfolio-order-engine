@@ -1,15 +1,18 @@
 package com.vishesh.orderengine.api;
 
+import org.springframework.http.HttpHeaders;
 import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
 
 import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.security.JwtTokenService;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -26,7 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureMockMvc
 @ActiveProfiles("postgres")
 @Transactional
-/* Secured API proof that GET /orders reaches handwritten JDBC pagination SQL. */
+/*
+ * Secured API proof that GET /orders reaches handwritten JDBC pagination SQL.
+ */
 public class PostgresOrderPaginationApiTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
@@ -35,17 +40,24 @@ public class PostgresOrderPaginationApiTest extends AbstractPostgresIntegrationT
     @Autowired
     private OrderRepository orderRepository;
 
-    private RequestPostProcessor readerCredentials() {
-        return httpBasic("order-reader", "reader-password");
-    }
+    @Autowired
+    private JwtTokenService jwtTokenService;
 
-    private RequestPostProcessor writerCredentials() {
-        return httpBasic("order-writer", "writer-password");
+    private RequestPostProcessor readerToken() {
+        String token = jwtTokenService.issue(
+                "order-reader",
+                Set.of("ROLE_ORDER_READER"));
+
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 
     @Test
     public void returnsPagedFilteredOrdersThroughPostgresApi() throws Exception {
-        // The profile assertion prevents this API test from silently exercising another adapter.
+        // The profile assertion prevents this API test from silently exercising another
+        // adapter.
         assertInstanceOf(JdbcOrderRepository.class, orderRepository);
         jdbcTemplate.update("DELETE from order_items");
         jdbcTemplate.update("DELETE from outbox_events");
@@ -61,7 +73,7 @@ public class PostgresOrderPaginationApiTest extends AbstractPostgresIntegrationT
         orderRepository.save(orderC);
 
         mockMvc.perform(get("/orders")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("page", "0")
                 .param("size", "2"))
                 .andExpect(status().isOk())
@@ -73,7 +85,7 @@ public class PostgresOrderPaginationApiTest extends AbstractPostgresIntegrationT
                 .andExpect(jsonPath("$.totalElements").value(3));
 
         mockMvc.perform(get("/orders")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("page", "0")
                 .param("size", "2")
                 .param("status", OrderStatus.CREATED.name()))

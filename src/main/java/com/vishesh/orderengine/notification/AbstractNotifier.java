@@ -1,7 +1,5 @@
 package com.vishesh.orderengine.notification;
 
-import com.vishesh.orderengine.*;
-
 /*
  * Plain-Java notification template: it validates a message once, then lets a
  * concrete notifier decide how that message is delivered. Configuration creates

@@ -11,7 +11,7 @@ import io.swagger.v3.oas.models.security.SecurityScheme;
 /*
  * Springdoc finds this OpenAPI bean while generating /v3/api-docs and
  * Swagger UI. It describes the API for clients; it does not enforce security.
- * SecurityConfiguration remains responsible for enforcing Basic authentication.
+ * SecurityConfiguration remains responsible for enforcing Bearer JWT authentication.
  */
 @Configuration
 public class OpenApiConfiguration {
@@ -19,13 +19,14 @@ public class OpenApiConfiguration {
     @Bean
     public OpenAPI orderEngineOpenApi() {
         return new OpenAPI()
-                // "basicAuth" is the documentation name used by OrderController.
+                // "bearerAuth" is the documentation name used by OrderController.
                 .components(new Components()
                         .addSecuritySchemes(
-                                "basicAuth",
+                                "bearerAuth",
                                 new SecurityScheme()
                                         .type(SecurityScheme.Type.HTTP)
-                                        .scheme("basic")))
+                                        .scheme("bearer")
+                                        .bearerFormat("JWT")))
                 .info(new Info()
                         .title("Order Engine API")
                         .version("1.0")

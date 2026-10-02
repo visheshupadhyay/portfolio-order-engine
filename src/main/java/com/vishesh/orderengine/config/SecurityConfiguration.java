@@ -5,8 +5,13 @@ import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -14,31 +19,50 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import com.vishesh.orderengine.security.JwtAuthenticationFilter;
+
 /*
  * Security revision: the filter chain runs before controllers. GET order
- * routes need a reader role; POST order routes need a writer role. CSRF stays
- * enabled because this Basic-auth example can be called by a browser.
+ * routes need a reader role; POST order routes need a writer role. This is a
+ * stateless Bearer-token API, so authentication comes from the JWT filter and
+ * CSRF protection is disabled because browsers do not automatically attach an
+ * Authorization header.
  * The in-memory users are learning-only placeholders for a future user store.
  */
 @Configuration
 public class SecurityConfiguration {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
+            JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+
+        // Answer a browser's CORS preflight before authentication or controller
+        // routing.
         return httpSecurity
-                // Answer a browser's CORS preflight before authentication or controller routing.
+                // Missing authentication is 401; a valid user without the required role is 403.
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .cors(Customizer.withDefaults())
+                // Header Bearer tokens are not sent automatically like browser cookies are.
+                .csrf(AbstractHttpConfigurer::disable)
+                // Each request must bring its own JWT; no server session remembers a login.
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/orders/**").hasRole("ORDER_READER")
                         .requestMatchers(HttpMethod.POST, "/orders/**").hasRole("ORDER_WRITER")
                         .requestMatchers("/orders/**").authenticated()
                         .anyRequest().permitAll())
-                .httpBasic(Customizer.withDefaults())
+                // Passwords are accepted only by /auth/login, never by normal order routes.
+                .httpBasic(AbstractHttpConfigurer::disable)
                 .build();
 
     }
@@ -73,11 +97,17 @@ public class SecurityConfiguration {
         CorsConfiguration corsConfiguration = new CorsConfiguration();
         corsConfiguration.setAllowedOrigins(List.of("http://localhost:3000"));
         corsConfiguration.setAllowedMethods(List.of("GET", "POST"));
-        corsConfiguration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-CSRF-TOKEN"));
-        corsConfiguration.setAllowCredentials(true);
+        corsConfiguration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/orders/**", corsConfiguration);
+        source.registerCorsConfiguration("/auth/**", corsConfiguration);
         return source;
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) {
+
+        return authenticationConfiguration.getAuthenticationManager();
     }
 }

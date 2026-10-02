@@ -1,9 +1,12 @@
 package com.vishesh.orderengine.api;
 
+import org.springframework.http.HttpHeaders;
 import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
 
 import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.security.JwtTokenService;
 
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -16,8 +19,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -40,8 +41,18 @@ public class PostgresOrderPaymentApiTest extends AbstractPostgresIntegrationTest
 
     private String saveOrderId;
 
-    private RequestPostProcessor writerCredentials() {
-        return httpBasic("order-writer", "writer-password");
+    @Autowired
+    private JwtTokenService jwtTokenService;
+
+    private RequestPostProcessor writerToken() {
+        String token = jwtTokenService.issue(
+                "order-writer",
+                Set.of("ROLE_ORDER_WRITER"));
+
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 
     @AfterEach
@@ -59,8 +70,7 @@ public class PostgresOrderPaymentApiTest extends AbstractPostgresIntegrationTest
         orderRepository.save(order);
 
         mockMvc.perform(post("/orders/" + saveOrderId + "/pay")
-                .with(writerCredentials())
-                .with(csrf()))
+                .with(writerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(saveOrderId))
                 .andExpect(jsonPath("$.status").value(OrderStatus.PAID.name()));

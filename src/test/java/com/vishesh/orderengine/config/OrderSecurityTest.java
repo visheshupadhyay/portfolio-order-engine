@@ -1,13 +1,20 @@
 package com.vishesh.orderengine.config;
 
 import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.security.JwtProperties;
+import com.vishesh.orderengine.security.JwtTokenService;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.Set;
+import org.springframework.http.HttpHeaders;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,78 +22,112 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /*
- * Focused security matrix: unauthenticated requests get 401; authenticated
- * requests still need CSRF for writes and the correct role for each route.
+ * Focused security matrix: unauthenticated requests get 401, while valid
+ * Bearer tokens still need the correct role for each protected route.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 public class OrderSecurityTest {
-    @Autowired
-    private MockMvc mockMvc;
+	@Autowired
+	private MockMvc mockMvc;
+	@Autowired
+	private JwtTokenService jwtTokenService;
+	@Autowired
+	private JwtProperties jwtProperties;
 
-    @Test
-    public void rejectsUnauthenticatedOrderRequest() throws Exception {
-        mockMvc.perform(get("/orders/order-101"))
-                .andExpect(status().isUnauthorized());
-    }
+	private RequestPostProcessor readerToken() {
+		String token = jwtTokenService.issue(
+				"order-reader",
+				Set.of("ROLE_ORDER_READER"));
 
-    @Test
-    public void allowsAuthenticatedOrderRequest() throws Exception {
-        mockMvc.perform(get("/orders/order-101")
-                .with(httpBasic("order-reader", "reader-password")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("order-101"));
+		return request -> {
+			request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+			return request;
+		};
+	}
 
-    }
+	private RequestPostProcessor writerToken() {
+		String token = jwtTokenService.issue(
+				"order-writer",
+				Set.of("ROLE_ORDER_WRITER"));
 
-    @Test
-    public void rejectsAuthenticatedPostWithoutCsrfToken() throws Exception {
-        mockMvc.perform(post("/orders")
-                .with(httpBasic("order-reader", "reader-password"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"id":"order-103"}
-                        """))
-                .andExpect(status().isForbidden());
-    }
+		return request -> {
+			request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+			return request;
+		};
+	}
 
-    @Test
-    public void rejectsReaderPostEvenWithCsrfToken() throws Exception {
-        mockMvc.perform(post("/orders")
-                .with(httpBasic("order-reader", "reader-password"))
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"id":"order-103"}
-                        """))
-                .andExpect(status().isForbidden());
-    }
+	@Test
+	public void rejectsUnauthenticatedOrderRequest() throws Exception {
+		mockMvc.perform(get("/orders/order-101"))
+				.andExpect(status().isUnauthorized());
+	}
 
-    @Test
-    public void allowsWriterPostWithCsrfToken() throws Exception {
-        mockMvc.perform(post("/orders")
-                .with(httpBasic("order-writer", "writer-password"))
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"id":"order-103"}
-                        """))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value("order-103"))
-                .andExpect(jsonPath("$.status").value("CREATED"));
-    }
+	@Test
+	public void allowsAuthenticatedOrderRequest() throws Exception {
+		mockMvc.perform(get("/orders/order-101")
+				.with(readerToken()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value("order-101"));
 
-    @Test
-    public void rejectsWriterPostWithoutCsrfToken() throws Exception {
-        mockMvc.perform(post("/orders")
-                .with(httpBasic("order-writer", "writer-password"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"id":"order-103"}
-                        """))
-                .andExpect(status().isForbidden());
+	}
 
-    }
+	@Test
+	public void rejectsReaderPostWithValidBearerToken() throws Exception {
+		mockMvc.perform(post("/orders")
+				.with(readerToken())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"id":"order-103"}
+						"""))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	public void allowsWriterPostWithBearerToken() throws Exception {
+		mockMvc.perform(post("/orders")
+				.with(writerToken())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"id":"order-103"}
+						"""))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.id").value("order-103"))
+				.andExpect(jsonPath("$.status").value("CREATED"));
+	}
+
+	@Test
+	public void rejectsMalformedBearerToken() throws Exception {
+		mockMvc.perform(get("/orders/order-101")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer not-a-real-jwt"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	public void rejectsExpiredBearerToken() throws Exception {
+		Instant pastTime = Instant.now().minus(Duration.ofHours(1));
+		Clock clock = Clock.fixed(pastTime, ZoneId.of("UTC"));
+
+		JwtTokenService tokenService = new JwtTokenService(jwtProperties.issuer(),
+				jwtProperties.base64Secret(),
+				jwtProperties.accessTokenTtl(),
+				clock);
+
+		String expiredToken = tokenService.issue("order-reader",
+				Set.of("ROLE_ORDER_READER"));
+
+		mockMvc.perform(get("/orders/order-101")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + expiredToken))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	public void allowsHealthEndpointWithoutCredentials() throws Exception {
+		mockMvc.perform(get("/actuator/health"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"));
+	}
 }

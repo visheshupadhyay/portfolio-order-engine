@@ -1,16 +1,19 @@
 package com.vishesh.orderengine.api;
 
+import org.springframework.http.HttpHeaders;
 import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
 
 import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.security.JwtTokenService;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,12 +38,18 @@ public class PostgresOrderCursorApiTest extends AbstractPostgresIntegrationTest 
     @Autowired
     private OrderRepository orderRepository;
 
-    private RequestPostProcessor readerCredentials() {
-        return httpBasic("order-reader", "reader-password");
-    }
+    @Autowired
+    private JwtTokenService jwtTokenService;
 
-    private RequestPostProcessor writerCredentials() {
-        return httpBasic("order-writer", "writer-password");
+    private RequestPostProcessor readerToken() {
+        String token = jwtTokenService.issue(
+                "order-reader",
+                Set.of("ROLE_ORDER_READER"));
+
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 
     @Test
@@ -65,7 +74,7 @@ public class PostgresOrderCursorApiTest extends AbstractPostgresIntegrationTest 
 
         mockMvc.perform(get("/orders/cursor")
                 .param("size", "2")
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].id").value(savedOrderIdA))
@@ -75,7 +84,7 @@ public class PostgresOrderCursorApiTest extends AbstractPostgresIntegrationTest 
         mockMvc.perform(get("/orders/cursor")
                 .param("size", "2")
                 .param("after", savedOrderIdB)
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].id").value(savedOrderIdC))
@@ -85,7 +94,7 @@ public class PostgresOrderCursorApiTest extends AbstractPostgresIntegrationTest 
         mockMvc.perform(get("/orders/cursor")
                 .param("size", "1")
                 .param("status", OrderStatus.CREATED.name())
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].id").value(savedOrderIdA))
@@ -95,7 +104,7 @@ public class PostgresOrderCursorApiTest extends AbstractPostgresIntegrationTest 
                 .param("size", "1")
                 .param("status", OrderStatus.CREATED.name())
                 .param("after", savedOrderIdA)
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].id").value(savedOrderIdC))

@@ -1,0 +1,46 @@
+# Compose reads local secrets from ignored .env and injects them only at runtime.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: order_engine
+      POSTGRES_USER: order_engine
+      POSTGRES_PASSWORD: "${ORDER_ENGINE_DB_PASSWORD:?Set ORDER_ENGINE_DB_PASSWORD in .env}"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order_engine -d order_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+    image: portfolio-order-engine:1.0
+    ports:
+      - "8081:8080"
+    environment:
+      JWT_BASE64_SECRET: "${JWT_BASE64_SECRET:?Set JWT_BASE64_SECRET in .env}"
+      ORDER_INPUT_FILE: /app/orders.txt
+      # "postgres" is the service hostname on Compose's private network, not localhost.
+      DB_URL: jdbc:postgresql://postgres:5432/order_engine
+      DB_USERNAME: order_engine
+      DB_PASSWORD: "${ORDER_ENGINE_DB_PASSWORD:?Set ORDER_ENGINE_DB_PASSWORD in .env}"
+      OUTBOX_DELIVERY_ENABLED: "false"
+      SMS_PROVIDER_BASE_URL: http://localhost:8089
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# A named volume keeps PostgreSQL data when containers are recreated.
+volumes:
+  postgres_data:

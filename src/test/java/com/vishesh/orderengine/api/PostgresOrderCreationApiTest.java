@@ -1,14 +1,15 @@
 package com.vishesh.orderengine.api;
 
+import org.springframework.http.HttpHeaders;
 import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
 
 import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.security.JwtTokenService;
 
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -35,8 +36,18 @@ public class PostgresOrderCreationApiTest extends AbstractPostgresIntegrationTes
 
     private String saveOrderId;
 
-    private RequestPostProcessor writerCredentials() {
-        return httpBasic("order-writer", "writer-password");
+    @Autowired
+    private JwtTokenService jwtTokenService;
+
+    private RequestPostProcessor writerToken() {
+        String token = jwtTokenService.issue(
+                "order-writer",
+                Set.of("ROLE_ORDER_WRITER"));
+
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 
     @AfterEach
@@ -52,13 +63,11 @@ public class PostgresOrderCreationApiTest extends AbstractPostgresIntegrationTes
         String requestBody = "{\"id\":\"" + saveOrderId + "\"}";
         // The first request wins the atomic insert; the identical second request must
         // surface the repository's false result as the public 409 contract.
-        mockMvc.perform(post("/orders").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders").with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody)).andExpect(status().isCreated());
 
-        mockMvc.perform(post("/orders").with(writerCredentials())
-                .with(csrf())
+        mockMvc.perform(post("/orders").with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody)).andExpect(status().isConflict());
 

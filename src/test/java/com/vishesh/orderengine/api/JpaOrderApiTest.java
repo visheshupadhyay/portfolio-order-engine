@@ -1,14 +1,14 @@
 package com.vishesh.orderengine.api;
 
+import org.springframework.http.HttpHeaders;
 import com.vishesh.orderengine.integration.AbstractPostgresIntegrationTest;
 
 import com.vishesh.orderengine.order.*;
+import com.vishesh.orderengine.security.JwtTokenService;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -47,12 +48,29 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
     private OrderRepository orderRepository;
     private List<String> savedOrderIds = new ArrayList<>();
 
-    private RequestPostProcessor readerCredentials() {
-        return httpBasic("order-reader", "reader-password");
+    @Autowired
+    private JwtTokenService jwtTokenService;
+
+    private RequestPostProcessor readerToken() {
+        String token = jwtTokenService.issue(
+                "order-reader",
+                Set.of("ROLE_ORDER_READER"));
+
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 
-    private RequestPostProcessor writerCredentials() {
-        return httpBasic("order-writer", "writer-password");
+    private RequestPostProcessor writerToken() {
+        String token = jwtTokenService.issue(
+                "order-writer",
+                Set.of("ROLE_ORDER_WRITER"));
+
+        return request -> {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
     }
 
     @AfterEach
@@ -75,8 +93,7 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
         String requestBody = "{\"id\":\"" + savedOrderId + "\"}";
         // The first request reaches the JPA adapter and persists a CREATED row.
         mockMvc.perform(post("/orders")
-                .with(writerCredentials())
-                .with(csrf())
+                .with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody)).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value(OrderStatus.CREATED.name()))
@@ -85,21 +102,20 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
         // The same public request must expose the adapter's atomic duplicate result as
         // 409.
         mockMvc.perform(post("/orders")
-                .with(writerCredentials())
-                .with(csrf())
+                .with(writerToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody)).andExpect(status().isConflict());
 
         // Payment uses the conditional state transition and returns the freshly
         // reloaded PAID value.
         mockMvc.perform(post("/orders/" + savedOrderId + "/pay")
-                .with(writerCredentials())
-                .with(csrf())).andExpect(status().isOk())
+                .with(writerToken()))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(OrderStatus.PAID.name()))
                 .andExpect(jsonPath("$.id").value(savedOrderId));
 
         mockMvc.perform(get("/orders/" + savedOrderId)
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(OrderStatus.PAID.name()));
     }
@@ -108,7 +124,8 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
     @Transactional
     public void returnsPagedFilteredOrdersThroughJpaApi() throws Exception {
         assertInstanceOf(JpaOrderRepository.class, orderRepository);
-        // One rollback-only fixture supports both unfiltered and status-filtered page assertions.
+        // One rollback-only fixture supports both unfiltered and status-filtered page
+        // assertions.
         jdbcTemplate.update("DELETE FROM order_items");
         jdbcTemplate.update("DELETE FROM outbox_events");
         jdbcTemplate.update("DELETE FROM orders");
@@ -123,7 +140,7 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
         orderRepository.save(orderB);
         orderRepository.save(orderC);
         mockMvc.perform(get("/orders")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("page", "0")
                 .param("size", "2"))
                 .andExpect(status().isOk())
@@ -135,7 +152,7 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.totalElements").value(3));
 
         mockMvc.perform(get("/orders")
-                .with(readerCredentials())
+                .with(readerToken())
                 .param("page", "0")
                 .param("size", "2")
                 .param("status", OrderStatus.CREATED.name()))
@@ -152,7 +169,8 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
     @Transactional
     public void returnsCursorBatchesThroughJpaApi() throws Exception {
         assertInstanceOf(JpaOrderRepository.class, orderRepository);
-        // Cursor assertions prove outgoing nextAfter can be used as the next incoming after value.
+        // Cursor assertions prove outgoing nextAfter can be used as the next incoming
+        // after value.
         jdbcTemplate.update("Delete from order_items");
         jdbcTemplate.update("Delete from outbox_events");
         jdbcTemplate.update("Delete from orders");
@@ -171,7 +189,7 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
 
         mockMvc.perform(get("/orders/cursor")
                 .param("size", "2")
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].id").value(savedOrderIdA))
@@ -183,7 +201,7 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
         mockMvc.perform(get("/orders/cursor")
                 .param("size", "2")
                 .param("after", savedOrderIdB)
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].id").value(savedOrderIdC))
@@ -195,12 +213,11 @@ public class JpaOrderApiTest extends AbstractPostgresIntegrationTest {
         mockMvc.perform(get("/orders/cursor")
                 .param("size", "1")
                 .param("status", OrderStatus.CREATED.name())
-                .with(readerCredentials()))
+                .with(readerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].id").value(savedOrderIdA))
                 .andExpect(jsonPath("$.content[0].status").value(OrderStatus.CREATED.name()))
                 .andExpect(jsonPath("$.nextAfter").value(savedOrderIdA));
-
     }
 }

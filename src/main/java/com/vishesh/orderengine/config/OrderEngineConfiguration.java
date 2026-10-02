@@ -1,11 +1,14 @@
 package com.vishesh.orderengine.config;
 
+import java.net.URI;
+import java.net.http.HttpClient;
 /*
  * Keeps the few beans that need custom construction or runtime configuration:
  * notifiers, the property-backed input Path, and startup work. Spring Boot now
  * performs component scanning and property loading automatically.
  */
 import java.nio.file.Path;
+import java.time.Clock;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -17,6 +20,12 @@ import com.vishesh.orderengine.importer.OrderImportService;
 import com.vishesh.orderengine.notification.AbstractNotifier;
 import com.vishesh.orderengine.notification.EmailNotifier;
 import com.vishesh.orderengine.notification.SmsNotifier;
+import com.vishesh.orderengine.notification.SmsProviderClient;
+import com.vishesh.orderengine.security.JwtAuthenticationFilter;
+import com.vishesh.orderengine.security.JwtProperties;
+import com.vishesh.orderengine.security.JwtTokenService;
+
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class OrderEngineConfiguration {
@@ -27,8 +36,8 @@ public class OrderEngineConfiguration {
     }
 
     @Bean
-    public AbstractNotifier smsNotifier() {
-        return new SmsNotifier("OrderEngine");
+    public AbstractNotifier smsNotifier(SmsProviderClient smsProviderClient) {
+        return new SmsNotifier("OrderEngine", smsProviderClient);
     }
 
     // Spring reads this value from application.properties, so each environment
@@ -45,5 +54,37 @@ public class OrderEngineConfiguration {
     @Bean 
     public CommandLineRunner importConfiguredOrdersAtStartup(OrderImportService orderImportService, Path orderInputFile) {
         return args -> orderImportService.importAndSave(orderInputFile);
+    }
+
+    @Bean
+    public HttpClient smsProviderHttpClient() {
+        return HttpClient.newHttpClient();
+    }
+
+    @Bean
+    public Clock systemClock() {
+        // Production uses UTC; tests can inject a fixed Clock to prove expiry behavior.
+        return Clock.systemUTC();
+    }
+
+
+    @Bean
+    public JwtTokenService jwtTokenService(JwtProperties jwtProperties, Clock clock) {
+        // The secret is read from external configuration, not embedded in Java code.
+        return new JwtTokenService(jwtProperties.issuer(), jwtProperties.base64Secret(), jwtProperties.accessTokenTtl(), clock);
+
+    }
+
+    @Bean
+    public SmsProviderClient smsProviderClient(HttpClient httpClient, ObjectMapper objectMapper, @Value("${notification.sms.provider-base-url}") String baseURL) {
+        URI baseUri = URI.create(baseURL);
+        SmsProviderClient client = new SmsProviderClient(httpClient, baseUri, objectMapper);
+        return client;
+    }
+
+    @Bean
+    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtTokenService jwtTokenService) {
+        // SecurityConfiguration inserts this managed filter into Spring's request chain.
+        return new JwtAuthenticationFilter(jwtTokenService);
     }
 }

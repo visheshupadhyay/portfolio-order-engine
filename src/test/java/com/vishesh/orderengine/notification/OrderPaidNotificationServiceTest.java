@@ -2,8 +2,6 @@ package com.vishesh.orderengine.notification;
 
 import com.vishesh.orderengine.order.*;
 
-import com.vishesh.orderengine.*;
-
 /*
  * Test-double revision: a recording notifier verifies the service message
  * without sending a real email or SMS.
