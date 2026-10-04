@@ -1,5 +1,6 @@
 package com.vishesh.orderengine.api;
 
+import com.vishesh.orderengine.cache.OrderCache;
 import com.vishesh.orderengine.order.*;
 import com.vishesh.orderengine.security.JwtTokenService;
 
@@ -9,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -24,6 +26,7 @@ import java.util.Set;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.Mockito.verify;
 
 /*
  * End-to-end MVC contracts through the real security filter chain: readers
@@ -44,6 +47,10 @@ public class OrderControllerTest {
     private String orderWithMoreThanCharLimit = "x".repeat(101);
     @Autowired
     private JwtTokenService jwtTokenService;
+    // MVC contracts should not require a manually running Redis server. Redis itself
+    // is verified separately with Testcontainers; this mock naturally simulates a cache miss.
+    @MockitoBean
+    private OrderCache orderCache;
 
     private RequestPostProcessor readerToken() {
         String token = jwtTokenService.issue(
@@ -131,11 +138,12 @@ public class OrderControllerTest {
     @Test
     public void marksCreatedOrderAsPaid() throws Exception {
         mockMvc.perform(post("/orders/order-101/pay").with(writerToken())
-
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("order-101"))
                 .andExpect(jsonPath("$.status").value(OrderStatus.PAID.name()));
+
+        verify(orderCache).evict("order-101");
     }
 
     @Test

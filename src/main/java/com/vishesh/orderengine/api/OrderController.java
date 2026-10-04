@@ -3,13 +3,9 @@ package com.vishesh.orderengine.api;
 import com.vishesh.orderengine.order.*;
 
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Stream;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,10 +42,14 @@ public class OrderController {
     private static final int ORDER_CHAR_LIMIT = 100;
     private final OrderRepository orderRepository;
     private final OrderPaymentService orderPaymentService;
+    // Keeps cache-aside policy out of this HTTP adapter.
+    private final OrderLookupService orderLookupService;
 
-    public OrderController(OrderRepository orderRepository, OrderPaymentService orderPaymentService) {
+    public OrderController(OrderRepository orderRepository, OrderPaymentService orderPaymentService,
+            OrderLookupService orderLookupService) {
         this.orderRepository = orderRepository;
         this.orderPaymentService = orderPaymentService;
+        this.orderLookupService = orderLookupService;
     }
 
     @ApiResponses({
@@ -60,10 +60,11 @@ public class OrderController {
     @GetMapping("/{id}")
     public OrderResponse getOrderById(@PathVariable String id) {
         validateOrderId(id);
-        Order order = orderRepository.findOrderById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Order not found: " + id));
+        // The lookup service checks Redis first and falls back to persistent storage on a miss.
+        Order order = orderLookupService.findById(id).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Order not found: " + id));
+
         return new OrderResponse(order.getId(), order.getStatus().name());
     }
 
@@ -104,6 +105,8 @@ public class OrderController {
         // Payment may be persisted by a direct SQL update, so use the freshly loaded
         // result returned by the service rather than the earlier Java object.
         Order paidOrder = orderPaymentService.pay(order);
+        // pay(...) completes its transactional work before returning; discard any old CREATED cache copy.
+        orderLookupService.evict(paidOrder.getId());
         return new OrderResponse(paidOrder.getId(), paidOrder.getStatus().name());
     }
 
