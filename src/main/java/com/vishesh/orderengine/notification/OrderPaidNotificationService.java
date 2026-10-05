@@ -21,19 +21,21 @@ import com.vishesh.orderengine.order.Order;
 public class OrderPaidNotificationService {
     private static final Logger logger = LoggerFactory.getLogger(OrderPaidNotificationService.class);
     private final AbstractNotifier notifier;
-    private final Set<Long> deliveredEventIds = ConcurrentHashMap.newKeySet();
-
-    public OrderPaidNotificationService(@Qualifier("smsNotifier") AbstractNotifier notifier) {
+    private final ProcessedNotificationEventRepository notificationRepository;
+    public OrderPaidNotificationService(@Qualifier("smsNotifier") AbstractNotifier notifier, ProcessedNotificationEventRepository notificationRepository) {
         this.notifier = notifier;
+        this.notificationRepository = notificationRepository;
     }
 
     public void notifyOrderPaid(Order order, long eventId) {
-        // The outbox worker calls this only after a PENDING event has committed.
-        if (!deliveredEventIds.add(eventId)) {
+        // Reserve this permanent event ID before calling the external notifier.
+        // A duplicate Kafka delivery then becomes a safe no-op instead of a
+        // duplicate customer message.
+        if (!notificationRepository.markProcessedIfFirstTime(eventId)) {
             logger.info(
-                    "Skipping duplicate paid-order notification: eventId={}, orderId={}",
-                    eventId,
-                    order.getId());
+                "Skipping duplicate paid-order notification: eventId={}, orderId={}",
+                eventId,
+                order.getId());
 
             return;
         }
@@ -57,8 +59,9 @@ public class OrderPaidNotificationService {
                     eventId,
                     order.getId(),
                     e.getClass().getSimpleName());
-
-            deliveredEventIds.remove(eventId);
+            // We only keep the idempotency record after a successful send. Remove
+            // it now so Spring Kafka's retry is allowed to attempt delivery again.
+            notificationRepository.removeProcessedEvent(eventId);
             throw e;
 
         }

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 import java.time.Duration;
@@ -14,14 +14,18 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import com.vishesh.orderengine.notification.OrderPaidNotificationService;
-import com.vishesh.orderengine.order.Order;
+import com.vishesh.orderengine.message.OrderPaidEventPublisher;
+import com.vishesh.orderengine.message.OrderPaidMessage;
 
+/*
+ * Fast unit tests for the worker's decision making. Kafka is represented by a
+ * Mockito publisher here: these tests prove what the worker asks Kafka to do,
+ * not whether a real broker can perform it (the Testcontainers tests do that).
+ */
 public class OutboxEventDeliveryWorkerMockitoTest {
 
 	// These tests do not use a database. Mockito supplies controlled collaborator
 	// behavior, then verifies the worker chose the correct repository/metric calls.
-	
 	private final OutboxDeliveryProperties deliveryProperties = new OutboxDeliveryProperties(
 			false,
 			Duration.ofSeconds(5),
@@ -31,8 +35,7 @@ public class OutboxEventDeliveryWorkerMockitoTest {
 			3);
 
 	@Test
-	public void marksClaimedEventSentWhenNotificationSucceeds() {
-		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+	public void marksClaimedEventSentWhenKafkaPublishSucceeds() {
 		LocalDateTime now = LocalDateTime.of(2026,
 				9,
 				30,
@@ -52,19 +55,23 @@ public class OutboxEventDeliveryWorkerMockitoTest {
 				null);
 
 		OutboxEventRepository repository = mock(OutboxEventRepository.class);
-		OrderPaidNotificationService notificationService = mock(OrderPaidNotificationService.class);
 		OutboxDeliveryMetrics metrics = mock(OutboxDeliveryMetrics.class);
-
+		OrderPaidEventPublisher publisher = mock(OrderPaidEventPublisher.class);
+		ArgumentCaptor<OrderPaidMessage> messageCaptor = ArgumentCaptor.forClass(OrderPaidMessage.class);
 		OutboxEventDeliveryWorker worker = new OutboxEventDeliveryWorker(repository,
-				notificationService,
 				deliveryProperties,
-				metrics);
+				metrics,
+				publisher);
 
 		when(repository.claimPendingReadyForDelivery(now, 10)).thenReturn(List.of(event));
 		when(repository.releaseExpiredClaims(now.minus(deliveryProperties.claimTimeout()))).thenReturn(0);
 		worker.deliverReadyEvents(now, 10);
 
-		verify(notificationService).notifyOrderPaid(orderCaptor.capture(), eq(1L));
+		verify(publisher).publish(messageCaptor.capture());
+		OrderPaidMessage publishedMessage = messageCaptor.getValue();
+		assertEquals(1L, publishedMessage.eventId());
+		assertEquals("order-1", publishedMessage.orderId());
+
 		verify(repository).markSent(1L, "claim-A", now);
 		verify(metrics).recordDelivered();
 
@@ -72,11 +79,10 @@ public class OutboxEventDeliveryWorkerMockitoTest {
 				any(LocalDateTime.class));
 
 		verify(repository, never()).markFailed(anyLong(), anyString(), anyString());
-		assertEquals("order-1", orderCaptor.getValue().getId());
 	}
 
 	@Test
-	public void reschedulesClaimedEventWhenNotificationFailsBeforeMaximumAttempts() {
+	public void reschedulesClaimedEventWhenKafkaFailsBeforeMaximumAttempts() {
 		LocalDateTime now = LocalDateTime.of(2026,
 				9,
 				30,
@@ -96,26 +102,24 @@ public class OutboxEventDeliveryWorkerMockitoTest {
 				null);
 
 		OutboxEventRepository repository = mock(OutboxEventRepository.class);
-		OrderPaidNotificationService notificationService = mock(OrderPaidNotificationService.class);
 		OutboxDeliveryMetrics metrics = mock(OutboxDeliveryMetrics.class);
+		OrderPaidEventPublisher publisher = mock(OrderPaidEventPublisher.class);
 		OutboxEventDeliveryWorker worker = new OutboxEventDeliveryWorker(repository,
-				notificationService,
 				deliveryProperties,
-				metrics);
+				metrics,
+				publisher);
 
 		when(repository.releaseExpiredClaims(now.minus(deliveryProperties.claimTimeout()))).thenReturn(0);
 		when(repository.claimPendingReadyForDelivery(now, 10)).thenReturn(List.of(event));
-		doThrow(new RuntimeException("Provider unavailable")).when(notificationService)
-				.notifyOrderPaid(any(Order.class), eq(2L));
+		doThrow(new RuntimeException("Kafka unavailable")).when(publisher)
+				.publish(any(OrderPaidMessage.class));
 
 		worker.deliverReadyEvents(now, 10);
-
-		verify(notificationService).notifyOrderPaid(any(Order.class), eq(2L));
 
 		verify(repository).rescheduleAfterFailure(
 				2L,
 				"claim-B",
-				"Provider unavailable",
+				"Kafka unavailable",
 				now.plus(deliveryProperties.retryDelay()));
 
 		verify(metrics).recordRetried();
@@ -134,10 +138,11 @@ public class OutboxEventDeliveryWorkerMockitoTest {
 		verify(metrics, never()).recordFailed();
 
 		verify(metrics).recordDeliveryRun(any(Duration.class));
+		verify(publisher).publish(any(OrderPaidMessage.class));
 	}
 
 	@Test
-	public void marksClaimedEventFailedWhenNotificationFailsAtMaximumAttempts() {
+	public void marksClaimedEventFailedWhenKafkaFailsAtMaximumAttempts() {
 		LocalDateTime now = LocalDateTime.of(2026,
 				9,
 				30,
@@ -157,23 +162,23 @@ public class OutboxEventDeliveryWorkerMockitoTest {
 				null);
 
 		OutboxEventRepository repository = mock(OutboxEventRepository.class);
-		OrderPaidNotificationService notificationService = mock(OrderPaidNotificationService.class);
 		OutboxDeliveryMetrics metrics = mock(OutboxDeliveryMetrics.class);
+		OrderPaidEventPublisher publisher = mock(OrderPaidEventPublisher.class);
 		OutboxEventDeliveryWorker worker = new OutboxEventDeliveryWorker(repository,
-				notificationService,
 				deliveryProperties,
-				metrics);
+				metrics,
+				publisher);
 
 		when(repository.releaseExpiredClaims(now.minus(deliveryProperties.claimTimeout()))).thenReturn(0);
 		when(repository.claimPendingReadyForDelivery(now, 10)).thenReturn(List.of(event));
-		doThrow(new RuntimeException("Provider unavailable")).when(notificationService)
-				.notifyOrderPaid(any(Order.class), eq(3L));
+		doThrow(new RuntimeException("Kafka unavailable")).when(publisher)
+				.publish(any(OrderPaidMessage.class));
 
 		worker.deliverReadyEvents(now, 10);
 
-		verify(notificationService).notifyOrderPaid(any(Order.class), eq(3L));
+		verify(publisher).publish(any(OrderPaidMessage.class));
 
-		verify(repository).markFailed(3L, "claim-C", "Provider unavailable");
+		verify(repository).markFailed(3L, "claim-C", "Kafka unavailable");
 
 		verify(metrics).recordFailed();
 
@@ -192,7 +197,7 @@ public class OutboxEventDeliveryWorkerMockitoTest {
 	}
 
 	@Test
-	public void continuesDeliveringLaterEventsWhenEarlierNotificationFails() {
+	public void continuesDeliveringLaterEventsWhenEarlierKafkaFails() {
 		LocalDateTime now = LocalDateTime.of(2026,
 				9,
 				30,
@@ -224,33 +229,30 @@ public class OutboxEventDeliveryWorkerMockitoTest {
 				null);
 
 		OutboxEventRepository repository = mock(OutboxEventRepository.class);
-		OrderPaidNotificationService notificationService = mock(OrderPaidNotificationService.class);
 		OutboxDeliveryMetrics metrics = mock(OutboxDeliveryMetrics.class);
+		OrderPaidEventPublisher publisher = mock(OrderPaidEventPublisher.class);
 		OutboxEventDeliveryWorker worker = new OutboxEventDeliveryWorker(repository,
-				notificationService,
 				deliveryProperties,
-				metrics);
+				metrics,
+				publisher);
 
 		when(repository.releaseExpiredClaims(now.minus(deliveryProperties.claimTimeout()))).thenReturn(0);
 		when(repository.claimPendingReadyForDelivery(now, 10)).thenReturn(List.of(event1, event2));
-		doThrow(new RuntimeException("Provider unavailable")).when(notificationService)
-				.notifyOrderPaid(any(Order.class), eq(4L));
+		doThrow(new RuntimeException("Kafka unavailable")).when(publisher)
+				.publish(argThat(message -> message.eventId()== 4L));
 
 		worker.deliverReadyEvents(now, 10);
-		verify(notificationService).notifyOrderPaid(any(Order.class), eq(4L));
+		verify(publisher).publish(argThat(message -> message.eventId()== 4L));
 
-		verify(notificationService).notifyOrderPaid(any(Order.class), eq(5L));
+		verify(publisher).publish(argThat(message -> message.eventId()== 5L));
 
-		verify(repository).rescheduleAfterFailure(4L, "claim-D", "Provider unavailable",
+		verify(repository).rescheduleAfterFailure(4L, "claim-D", "Kafka unavailable",
 				now.plus(deliveryProperties.retryDelay()));
 		verify(repository).markSent(5L, "claim-E", now);
 
 		verify(metrics).recordDelivered();
 		verify(metrics).recordRetried();
 		verify(metrics, never()).recordFailed();
-		verify(repository, never()).markFailed(
-				anyLong(),
-				anyString(),
-				anyString());
+		verify(repository, never()).markFailed(anyLong(), anyString(), anyString());
 	}
 }

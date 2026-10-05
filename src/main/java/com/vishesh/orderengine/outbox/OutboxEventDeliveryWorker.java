@@ -1,22 +1,29 @@
 package com.vishesh.orderengine.outbox;
 
-import com.vishesh.orderengine.order.Order;
-import com.vishesh.orderengine.notification.OrderPaidNotificationService;
+import com.vishesh.orderengine.message.OrderPaidEventPublisher;
+import com.vishesh.orderengine.message.OrderPaidMessage;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Service
+/*
+ * Bridge from the PostgreSQL transactional outbox to Kafka.
+ *
+ * Payment writes an outbox row in the same database transaction. A later worker
+ * claims that durable row, publishes its stable event ID to Kafka, then marks
+ * the row SENT only after Kafka acknowledges it. This avoids losing an event
+ * when the application crashes between payment and publication.
+ */
 public class OutboxEventDeliveryWorker {
     private static final Logger logger = LoggerFactory.getLogger(OutboxEventDeliveryWorker.class);
     private final OutboxEventRepository outboxEventRepository;
-    private final OrderPaidNotificationService orderPaidNotificationService;
+    private final OrderPaidEventPublisher orderPaidEventPublisher;
     private final OutboxDeliveryMetrics outboxDeliveryMetrics;
 
     // Typed operational settings come from Spring configuration, allowing each
@@ -24,14 +31,14 @@ public class OutboxEventDeliveryWorker {
     private final OutboxDeliveryProperties outboxDeliveryProperties;
 
     public OutboxEventDeliveryWorker(OutboxEventRepository outboxEventRepository,
-            OrderPaidNotificationService orderPaidNotificationService,
             OutboxDeliveryProperties outboxDeliveryProperties,
-            OutboxDeliveryMetrics outboxDeliveryMetrics) {
+            OutboxDeliveryMetrics outboxDeliveryMetrics,
+            OrderPaidEventPublisher orderPaidEventPublisher) {
 
-        this.orderPaidNotificationService = orderPaidNotificationService;
         this.outboxEventRepository = outboxEventRepository;
         this.outboxDeliveryMetrics = outboxDeliveryMetrics;
         this.outboxDeliveryProperties = outboxDeliveryProperties;
+        this.orderPaidEventPublisher = orderPaidEventPublisher;
     }
 
     public void deliverReadyEvents(LocalDateTime now, int limit) {
@@ -51,17 +58,23 @@ public class OutboxEventDeliveryWorker {
             List<OutboxEvent> events = outboxEventRepository.claimPendingReadyForDelivery(now, limit);
             logger.info("Outbox delivery run claimed {} event(s)", events.size());
             for (OutboxEvent event : events) {
-                Order order = new Order(event.orderId());
+
                 try {
                     logger.debug(
                             "Delivering outbox event: eventId={}, orderId={}, attempt={}",
                             event.id(),
                             event.orderId(),
                             event.attemptCount() + 1);
-                    // Mark SENT only after the provider call succeeds. The claim token
-                    // proves this worker still owns the event when it writes the result.
-                    orderPaidNotificationService.notifyOrderPaid(order, event.id());
+
+                    OrderPaidMessage message = new OrderPaidMessage(event.id(), event.orderId());
+                    orderPaidEventPublisher.publish(message);
+
+                    // Kafka accepted the event, so this outbox row no longer
+                    // needs delivery. A crash before this line can cause a
+                    // duplicate Kafka event later; consumers handle that using
+                    // the permanent event ID.
                     outboxEventRepository.markSent(event.id(), event.claimToken(), now);
+
                     logger.info(
                             "Outbox event delivered successfully: eventId={}, orderId={}",
                             event.id(),
@@ -73,7 +86,7 @@ public class OutboxEventDeliveryWorker {
                     if (event.attemptCount() + 1 < outboxDeliveryProperties.maxAttempts()) {
                         LocalDateTime nextAttemptAt = now.plus(outboxDeliveryProperties.retryDelay());
                         logger.warn(
-                                "Outbox delivery failed; retry scheduled: eventId={}, orderId={}, attempt={}, maxAttempts={}, nextAttemptAt={}, exceptionType={}",
+                                "Kafka publish failed; retry scheduled: eventId={}, orderId={}, attempt={}, maxAttempts={}, nextAttemptAt={}, exceptionType={}",
                                 event.id(),
                                 event.orderId(),
                                 event.attemptCount() + 1,
@@ -86,7 +99,7 @@ public class OutboxEventDeliveryWorker {
                     } else {
                         outboxEventRepository.markFailed(event.id(), event.claimToken(), e.getMessage());
                         logger.error(
-                                "Outbox delivery failed permanently: eventId={}, orderId={}, attempt={}, maxAttempts={}, exceptionType={}",
+                                "Kafka publish failed permanently: eventId={}, orderId={}, attempt={}, maxAttempts={}, exceptionType={}",
                                 event.id(),
                                 event.orderId(),
                                 event.attemptCount() + 1,
