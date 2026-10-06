@@ -14,6 +14,17 @@ jobs:
     name: Run tests
     runs-on: ubuntu-latest
 
+    env:
+      # Safe throwaway values used only by the temporary CI machine.
+      ORDER_ENGINE_DB_PASSWORD: ci-postgres-password
+      DB_URL: jdbc:postgresql://localhost:5432/order_engine
+      DB_USERNAME: order_engine
+      DB_PASSWORD: ci-postgres-password
+      JWT_BASE64_SECRET: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+
     steps:
       - name: Download repository code
         uses: actions/checkout@v4
@@ -28,5 +39,16 @@ jobs:
       - name: Confirm Docker is available
         run: docker version
 
+      - name: Start PostgreSQL, Redis, and Kafka for tests
+        run: docker compose up -d --wait postgres redis kafka
+
       - name: Run the complete test suite
         run: mvn -B test
+
+      - name: Show service logs if tests fail
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Clean up temporary services
+        if: always()
+        run: docker compose down -v
