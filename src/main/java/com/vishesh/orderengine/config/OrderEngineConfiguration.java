@@ -9,6 +9,10 @@ import java.net.http.HttpClient;
  */
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
+
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -51,8 +55,9 @@ public class OrderEngineConfiguration {
      * Boot invokes this runner only after the context has created and injected
      * its beans. The runner starts the use case; OrderImportService owns its logic.
      */
-    @Bean 
-    public CommandLineRunner importConfiguredOrdersAtStartup(OrderImportService orderImportService, Path orderInputFile) {
+    @Bean
+    public CommandLineRunner importConfiguredOrdersAtStartup(OrderImportService orderImportService,
+            Path orderInputFile) {
         return args -> orderImportService.importAndSave(orderInputFile);
     }
 
@@ -67,24 +72,34 @@ public class OrderEngineConfiguration {
         return Clock.systemUTC();
     }
 
-
     @Bean
     public JwtTokenService jwtTokenService(JwtProperties jwtProperties, Clock clock) {
         // The secret is read from external configuration, not embedded in Java code.
-        return new JwtTokenService(jwtProperties.issuer(), jwtProperties.base64Secret(), jwtProperties.accessTokenTtl(), clock);
+        return new JwtTokenService(jwtProperties.issuer(), jwtProperties.base64Secret(), jwtProperties.accessTokenTtl(),
+                clock);
 
     }
 
     @Bean
-    public SmsProviderClient smsProviderClient(HttpClient httpClient, ObjectMapper objectMapper, @Value("${notification.sms.provider-base-url}") String baseURL) {
-        URI baseUri = URI.create(baseURL);
-        SmsProviderClient client = new SmsProviderClient(httpClient, baseUri, objectMapper);
-        return client;
+    public SmsProviderClient smsProviderClient(HttpClient httpClient, ObjectMapper objectMapper,
+            @Value("${notification.sms.provider-base-url}") String baseURL,
+            @Value("${notification.sms.request-timeout}") Duration requestTimeout,
+            CircuitBreakerRegistry circuitBreakerRegistry,
+            BulkheadRegistry bulkheadRegistry) {
+
+        return new SmsProviderClient(
+                httpClient,
+                URI.create(baseURL),
+                objectMapper,
+                requestTimeout,
+                circuitBreakerRegistry.circuitBreaker("smsProvider"),
+                bulkheadRegistry.bulkhead("smsProvider"));
     }
 
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter(JwtTokenService jwtTokenService) {
-        // SecurityConfiguration inserts this managed filter into Spring's request chain.
+        // SecurityConfiguration inserts this managed filter into Spring's request
+        // chain.
         return new JwtAuthenticationFilter(jwtTokenService);
     }
 }

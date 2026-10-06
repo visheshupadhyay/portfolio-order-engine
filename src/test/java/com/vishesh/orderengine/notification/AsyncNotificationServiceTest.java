@@ -2,14 +2,10 @@ package com.vishesh.orderengine.notification;
 
 import com.vishesh.orderengine.order.*;
 
-import com.vishesh.orderengine.*;
-
 /*
  * CompletableFuture revision: covers async success, exception wrapping,
  * timeouts, and cancelling queued work before notification delivery begins.
  */
-
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -26,7 +22,6 @@ import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Test;
 
-
 public class AsyncNotificationServiceTest {
 
     @Test
@@ -35,48 +30,47 @@ public class AsyncNotificationServiceTest {
         AsyncRecordingNotifier recordingNotifier = new AsyncRecordingNotifier("TEST");
         AsyncNotificationService asyncNotificationService = new AsyncNotificationService(executor, recordingNotifier);
         CompletableFuture<Void> future = asyncNotificationService.notifyPaidAsync(new Order("order-101"));
-        
-        try{
+
+        try {
             future.join();
-            assertEquals("Order order-101 is paid",  recordingNotifier.getMessage());
-        }
-        finally{
+            assertEquals("Order order-101 is paid", recordingNotifier.getMessage());
+        } finally {
             executor.shutdown();
         }
     }
 
     @Test
-    public void completesExceptionallyWhenNotificationFails(){
+    public void completesExceptionallyWhenNotificationFails() {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         FailingNotifier failingNotifier = new FailingNotifier("FAIL");
         AsyncNotificationService asyncNotificationService = new AsyncNotificationService(executor, failingNotifier);
         CompletableFuture<Void> future = asyncNotificationService.notifyPaidAsync(new Order("order-fail"));
-        try{
-            CompletionException exception = assertThrows(CompletionException.class, ()->future.join());
+        try {
+            CompletionException exception = assertThrows(CompletionException.class, () -> future.join());
             assertTrue(exception.getCause() instanceof IllegalStateException);
-        }finally{
+        } finally {
             executor.shutdown();
         }
     }
 
     @Test
-    public void timesOutWhenNotificationTakesTooLong() throws InterruptedException,ExecutionException,TimeoutException {
+    public void timesOutWhenNotificationTakesTooLong()
+            throws InterruptedException, ExecutionException, TimeoutException {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         LongWaitNotifier longWaitNotifier = new LongWaitNotifier("LONG WAIT");
-        AsyncNotificationService asyncNotificationService = new  AsyncNotificationService(executor, longWaitNotifier);
-        CompletableFuture<Void> future = asyncNotificationService.notifyPaidAsync(new  Order("order-wait"));
+        AsyncNotificationService asyncNotificationService = new AsyncNotificationService(executor, longWaitNotifier);
+        CompletableFuture<Void> future = asyncNotificationService.notifyPaidAsync(new Order("order-wait"));
 
         future.orTimeout(100, TimeUnit.MILLISECONDS);
-        try{
-            CompletionException exception = assertThrows(CompletionException.class, ()->future.join());
+        try {
+            CompletionException exception = assertThrows(CompletionException.class, () -> future.join());
             assertTrue(exception.getCause() instanceof TimeoutException);
-        }
-        finally{
+        } finally {
             executor.shutdownNow();
         }
     }
 
-    @Test 
+    @Test
     public void cancelsQueuedNotificationBeforeDelivery() throws InterruptedException {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         CountDownLatch workerStarted = new CountDownLatch(1);
@@ -93,16 +87,16 @@ public class AsyncNotificationServiceTest {
             }
         });
 
-        workerStarted.await();    
+        workerStarted.await();
         AsyncRecordingNotifier asyncRecordingNotifier = new AsyncRecordingNotifier("ORDER CANCEL");
-        AsyncNotificationService asyncNotificationService = new AsyncNotificationService(executor, asyncRecordingNotifier);
-        CompletableFuture<Void> future = asyncNotificationService.notifyPaidAsync(new Order("order-cancel"));  
+        AsyncNotificationService asyncNotificationService = new AsyncNotificationService(executor,
+                asyncRecordingNotifier);
+        CompletableFuture<Void> future = asyncNotificationService.notifyPaidAsync(new Order("order-cancel"));
         boolean result = future.cancel(false);
-        try{
-            
+        try {
+
             allowWorkerToFinish.countDown();
-        }
-        finally{
+        } finally {
             executor.shutdown();
         }
         assertTrue(result);
@@ -111,11 +105,13 @@ public class AsyncNotificationServiceTest {
     }
 }
 
-class AsyncRecordingNotifier extends AbstractNotifier{
+class AsyncRecordingNotifier extends AbstractNotifier {
     private String receivedMessage;
+
     public AsyncRecordingNotifier(String senderName) {
         super(senderName);
     }
+
     @Override
     protected void deliver(String message) {
         receivedMessage = message;
@@ -126,28 +122,29 @@ class AsyncRecordingNotifier extends AbstractNotifier{
     }
 }
 
-class FailingNotifier extends AbstractNotifier{
+class FailingNotifier extends AbstractNotifier {
     public FailingNotifier(String senderName) {
         super(senderName);
     }
+
     @Override
     protected void deliver(String message) {
         throw new IllegalStateException();
     }
 }
 
-class LongWaitNotifier extends AbstractNotifier{
+class LongWaitNotifier extends AbstractNotifier {
     public LongWaitNotifier(String senderName) {
         super(senderName);
     }
+
     @Override
     protected void deliver(String message) {
-        try{
+        try {
             Thread.sleep(1000);
-        }
-        catch(InterruptedException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        
+
     }
 }

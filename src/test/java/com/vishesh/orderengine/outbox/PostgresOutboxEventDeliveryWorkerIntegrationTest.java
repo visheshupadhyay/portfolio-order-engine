@@ -26,6 +26,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.vishesh.orderengine.order.Order;
+import com.vishesh.orderengine.order.OrderRowMapper;
 import com.vishesh.orderengine.order.OrderStatus;
 
 @SpringBootTest
@@ -85,9 +87,9 @@ public class PostgresOutboxEventDeliveryWorkerIntegrationTest extends AbstractPo
     }
 
     @Test
-    public void reschedulesPendingOutboxEventWhenPostgresWorkerDeliveryFails() {
+    public void keepsPaidOrderAndReschedulesOutboxEventWhenKafkaPublishFails() {
         savedOrderId = "postgres-outbox-delivery-test-" + UUID.randomUUID();
-        jdbcTemplate.update("INSERT into orders (id, status) VALUES (?,?)", savedOrderId, OrderStatus.CREATED.name());
+        jdbcTemplate.update("INSERT into orders (id, status) VALUES (?,?)", savedOrderId, OrderStatus.PAID.name());
         jdbcTemplate.update("INSERT into outbox_events (order_id) VALUES (?)", savedOrderId);
         LocalDateTime now = LocalDateTime.now().plusMinutes(3).withNano(0);
         doThrow(new RuntimeException("Kafka unavailable")).when(publisher)
@@ -95,14 +97,21 @@ public class PostgresOutboxEventDeliveryWorkerIntegrationTest extends AbstractPo
 
         assertDoesNotThrow(() -> outboxEventDeliveryWorker.deliverReadyEvents(now, 10));
 
-        OutboxEvent event = jdbcTemplate
+        OutboxEvent outboxEvent = jdbcTemplate
                 .query("Select * from outbox_events where order_id =?", new OutboxEventRowMapper(), savedOrderId)
                 .get(0);
-        assertEquals(OutboxEventStatus.PENDING, event.status());
-        assertEquals(1, event.attemptCount());
-        assertEquals("Kafka unavailable", event.lastError());
-        assertNull(event.sentAt());
-        assertEquals(now.plusMinutes(1), event.nextAttemptAt());
+        Order orderEvent = jdbcTemplate
+                .query("Select * from orders where id =?", new OrderRowMapper(), savedOrderId)
+                .get(0);
+
+        // Kafka publication failure must delay notification delivery, never undo
+        // payment.
+        assertEquals(OrderStatus.PAID, orderEvent.getStatus());
+        assertEquals(OutboxEventStatus.PENDING, outboxEvent.status());
+        assertEquals(1, outboxEvent.attemptCount());
+        assertEquals("Kafka unavailable", outboxEvent.lastError());
+        assertNull(outboxEvent.sentAt());
+        assertEquals(now.plusMinutes(1), outboxEvent.nextAttemptAt());
     }
 
     @Test

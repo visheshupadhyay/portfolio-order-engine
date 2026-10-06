@@ -26,6 +26,10 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.vishesh.orderengine.security.JwtAuthenticationFilter;
+import com.vishesh.orderengine.security.OrderWriteRateLimitFilter;
+
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 
 /*
  * Security revision: the filter chain runs before controllers. GET order
@@ -40,10 +44,13 @@ public class SecurityConfiguration {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
-            JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+            JwtAuthenticationFilter jwtAuthenticationFilter, RateLimiterRegistry rateLimiterRegistry) throws Exception {
 
         // Answer a browser's CORS preflight before authentication or controller
         // routing.
+
+        RateLimiter rateLimiter = rateLimiterRegistry.rateLimiter("orderWrites");
+        OrderWriteRateLimitFilter rateLimiterFilter = new OrderWriteRateLimitFilter(rateLimiter);
         return httpSecurity
                 // Missing authentication is 401; a valid user without the required role is 403.
                 .exceptionHandling(exception -> exception
@@ -54,6 +61,7 @@ public class SecurityConfiguration {
                 // Each request must bring its own JWT; no server session remembers a login.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(rateLimiterFilter, JwtAuthenticationFilter.class)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()

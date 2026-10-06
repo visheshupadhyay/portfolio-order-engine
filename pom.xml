@@ -24,7 +24,6 @@
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
                 <systemPropertyVariables>
-                <JWT_BASE64_SECRET>a97vHD5pOUt3BQUjfkjVKGG1TifGT77SvJGahbzDeZg=</JWT_BASE64_SECRET>
                 <spring.kafka.listener.auto-startup>false</spring.kafka.listener.auto-startup>
                 </systemPropertyVariables>
             </configuration>
@@ -181,6 +180,11 @@
         <groupId>org.springframework.kafka</groupId>
         <artifactId>spring-kafka-test</artifactId>
         <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>io.github.resilience4j</groupId>
+        <artifactId>resilience4j-spring-boot4</artifactId>
+        <version>2.4.0</version>
     </dependency>
 </dependencies>
 </project>
