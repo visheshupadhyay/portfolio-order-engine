@@ -1,0 +1,5 @@
+# Keeps this application's Kubernetes resources separate from system resources.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: order-engine

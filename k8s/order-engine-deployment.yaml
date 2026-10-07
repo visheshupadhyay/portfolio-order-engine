@@ -1,0 +1,73 @@
+# Kubernetes should keep two running copies of the Order Engine application.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-engine
+  namespace: order-engine
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Keep both existing healthy app copies available during the update.
+      maxUnavailable: 0
+      # Kubernetes may temporarily run one extra Pod while replacing old ones.
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: order-engine
+  template:
+    metadata:
+      labels:
+        app: order-engine
+    spec:
+      containers:
+        - name: order-engine
+          image: portfolio-order-engine:1.0
+
+          # We loaded this local image into the Kubernetes node ourselves.
+          # Do not try to download it from Docker Hub.
+          imagePullPolicy: Never
+
+          ports:
+            - containerPort: 8080
+
+          # Give the app both the public settings note and locked secret values.
+          envFrom:
+            - configMapRef:
+                name: order-engine-config
+            - secretRef:
+                name: order-engine-secrets
+
+          # During startup, give Spring Boot time to connect to its dependencies.
+          startupProbe:
+            initialDelaySeconds: 20
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 12
+
+          # If the app becomes unhealthy after it started, Kubernetes restarts it.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # Only send traffic to the app after it says it is ready.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 3
+          
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "768Mi"

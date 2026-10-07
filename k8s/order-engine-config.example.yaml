@@ -1,0 +1,21 @@
+# Copy this file to local-order-engine-config.yaml.
+# Replace the host values for the environment where Order Engine runs.
+# Do not put passwords or JWT secrets here.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-engine-config
+  namespace: order-engine
+data:
+  DB_URL: jdbc:postgresql://YOUR_POSTGRES_HOST:5432/order_engine
+  DB_USERNAME: order_engine
+
+  REDIS_HOST: YOUR_REDIS_HOST
+  REDIS_PORT: "6379"
+
+  KAFKA_BOOTSTRAP_SERVERS: YOUR_KAFKA_HOST:9092
+
+  ORDER_INPUT_FILE: /app/orders.txt
+  OUTBOX_DELIVERY_ENABLED: "false"
+  SMS_PROVIDER_BASE_URL: http://YOUR_SMS_PROVIDER_HOST:8089
