@@ -3,3 +3,5 @@ target/
 .idea/
 .vscode/
 .env
+/k8s/local-secret.yaml
+/k8s/local-order-engine-config.yaml

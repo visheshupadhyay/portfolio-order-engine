@@ -1,0 +1,18 @@
+# A stable internal address for whichever healthy Order Engine Pod exists.
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-engine
+  namespace: order-engine
+spec:
+  # Match Pods carrying this label.
+  selector:
+    app: order-engine
+  ports:
+    - name: http
+      # The Service listens internally on this port.
+      port: 8080
+      # Forward requests to port 8080 inside the selected Pod.
+      targetPort: 8080
+  # Internal-only Service. We will temporarily tunnel to it from the laptop.
+  type: ClusterIP
