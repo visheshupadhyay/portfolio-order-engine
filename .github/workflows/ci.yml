@@ -45,6 +45,9 @@ jobs:
 
       - name: Run the complete test suite
         run: mvn -B test
+
+      - name: Run SpotBugs static analysis
+        run: mvn -B spotbugs:check
       
       - name: Build the Docker image
         run: docker build --tag portfolio-order-engine:ci .

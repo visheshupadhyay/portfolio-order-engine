@@ -130,4 +130,18 @@ public class OrderSecurityTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("UP"));
 	}
+
+	@Test
+	public void rejectsMetricsEndpointWithReaderCredentials() throws Exception {
+		mockMvc.perform(get("/actuator/metrics").with(readerToken()))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(get("/actuator/metrics"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	public void rejectsUnknownPath() throws Exception {
+		mockMvc.perform(get("/internal/not-configured").with(readerToken()))
+				.andExpect(status().isForbidden());
+	}
 }
