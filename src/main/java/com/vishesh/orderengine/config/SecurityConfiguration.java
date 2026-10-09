@@ -26,6 +26,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.vishesh.orderengine.security.JwtAuthenticationFilter;
+import com.vishesh.orderengine.security.LoginRateLimitFilter;
 import com.vishesh.orderengine.security.OrderWriteRateLimitFilter;
 
 import io.github.resilience4j.ratelimiter.RateLimiter;
@@ -42,80 +43,100 @@ import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 @Configuration
 public class SecurityConfiguration {
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
-            JwtAuthenticationFilter jwtAuthenticationFilter, RateLimiterRegistry rateLimiterRegistry) throws Exception {
+	@Bean
+	public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
+			JwtAuthenticationFilter jwtAuthenticationFilter, RateLimiterRegistry rateLimiterRegistry)
+			throws Exception {
 
-        // Answer a browser's CORS preflight before authentication or controller
-        // routing.
+		// Answer a browser's CORS preflight before authentication or controller
+		// routing.
 
-        RateLimiter rateLimiter = rateLimiterRegistry.rateLimiter("orderWrites");
-        OrderWriteRateLimitFilter rateLimiterFilter = new OrderWriteRateLimitFilter(rateLimiter);
-        return httpSecurity
-                // Missing authentication is 401; a valid user without the required role is 403.
-                .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-                .cors(Customizer.withDefaults())
-                // Header Bearer tokens are not sent automatically like browser cookies are.
-                .csrf(AbstractHttpConfigurer::disable)
-                // Each request must bring its own JWT; no server session remembers a login.
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(rateLimiterFilter, JwtAuthenticationFilter.class)
-                .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/actuator/health/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/orders/**").hasRole("ORDER_READER")
-                        .requestMatchers(HttpMethod.POST, "/orders/**").hasRole("ORDER_WRITER")
-                        .requestMatchers("/orders/**").authenticated()
-                        .anyRequest().permitAll())
-                // Passwords are accepted only by /auth/login, never by normal order routes.
-                .httpBasic(AbstractHttpConfigurer::disable)
-                .build();
+		RateLimiter rateLimiter = rateLimiterRegistry.rateLimiter("orderWrites");
+		OrderWriteRateLimitFilter rateLimiterFilter = new OrderWriteRateLimitFilter(rateLimiter);
 
-    }
+		RateLimiter loginRateLimiter = rateLimiterRegistry.rateLimiter("loginAttempts");
+		LoginRateLimitFilter loginRateLimitFilter = new LoginRateLimitFilter(loginRateLimiter);
+		return httpSecurity
+				// Missing authentication is 401; a valid user without the required role is 403.
+				.exceptionHandling(exception -> exception
+						.authenticationEntryPoint(
+								new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+				.cors(Customizer.withDefaults())
+				// Header Bearer tokens are not sent automatically like browser cookies are.
+				.csrf(AbstractHttpConfigurer::disable)
+				// Each request must bring its own JWT; no server session remembers a login.
+				.sessionManagement(session -> session
+						.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+				.addFilterAfter(jwtAuthenticationFilter, LoginRateLimitFilter.class)
+				.addFilterAfter(rateLimiterFilter, JwtAuthenticationFilter.class)
+				.authorizeHttpRequests(authorize -> authorize
+						.requestMatchers("/actuator/health/**").permitAll()
+						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**",
+								"/swagger-ui.html")
+						.permitAll()
+						.requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+						.requestMatchers(HttpMethod.GET, "/orders/**").hasRole("ORDER_READER")
+						.requestMatchers(HttpMethod.POST, "/orders/**").hasRole("ORDER_WRITER")
+						.requestMatchers("/orders/**").authenticated()
+						.requestMatchers(
+								"/actuator/metrics",
+								"/actuator/metrics/**",
+								"/actuator/prometheus")
+						.hasRole("ORDER_ADMIN")
+						.anyRequest().denyAll())
+				// Passwords are accepted only by /auth/login, never by normal order routes.
+				.httpBasic(AbstractHttpConfigurer::disable)
+				.build();
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+	}
 
-    @Bean
-    public UserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
-        UserDetails orderReader = User.withUsername("order-reader")
-                .password(passwordEncoder.encode("reader-password"))
-                .roles("ORDER_READER")
-                .build();
-        UserDetails orderWriter = User.withUsername("order-writer")
-                .password(passwordEncoder.encode("writer-password"))
-                .roles("ORDER_WRITER")
-                .build();
+	@Bean
+	public PasswordEncoder passwordEncoder() {
+		return new BCryptPasswordEncoder();
+	}
 
-        return new InMemoryUserDetailsManager(orderReader, orderWriter);
-    }
+	@Bean
+	public UserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
+		UserDetails orderReader = User.withUsername("order-reader")
+				.password(passwordEncoder.encode("reader-password"))
+				.roles("ORDER_READER")
+				.build();
+		UserDetails orderWriter = User.withUsername("order-writer")
+				.password(passwordEncoder.encode("writer-password"))
+				.roles("ORDER_WRITER")
+				.build();
 
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        /*
-         * Spring Security's CORS support looks up this bean by its type.
-         * It grants browser permission only to our local frontend and only
-         * for the order API; authentication and role checks still happen
-         * afterwards for the real request.
-         */
-        CorsConfiguration corsConfiguration = new CorsConfiguration();
-        corsConfiguration.setAllowedOrigins(List.of("http://localhost:3000"));
-        corsConfiguration.setAllowedMethods(List.of("GET", "POST"));
-        corsConfiguration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+		UserDetails admin = User.withUsername("order-admin")
+				.password(passwordEncoder.encode("admin-password"))
+				.roles("ORDER_ADMIN")
+				.build();
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/orders/**", corsConfiguration);
-        source.registerCorsConfiguration("/auth/**", corsConfiguration);
-        return source;
-    }
+		return new InMemoryUserDetailsManager(orderReader, orderWriter, admin);
+	}
 
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) {
+	@Bean
+	public CorsConfigurationSource corsConfigurationSource() {
+		/*
+		 * Spring Security's CORS support looks up this bean by its type.
+		 * It grants browser permission only to our local frontend and only
+		 * for the order API; authentication and role checks still happen
+		 * afterwards for the real request.
+		 */
+		CorsConfiguration corsConfiguration = new CorsConfiguration();
+		corsConfiguration.setAllowedOrigins(List.of("http://localhost:3000"));
+		corsConfiguration.setAllowedMethods(List.of("GET", "POST"));
+		corsConfiguration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 
-        return authenticationConfiguration.getAuthenticationManager();
-    }
+		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+		source.registerCorsConfiguration("/orders/**", corsConfiguration);
+		source.registerCorsConfiguration("/auth/**", corsConfiguration);
+		return source;
+	}
+
+	@Bean
+	public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) {
+
+		return authenticationConfiguration.getAuthenticationManager();
+	}
 }

@@ -35,6 +35,15 @@
                 <mainClass>com.vishesh.orderengine.App</mainClass>
             </configuration>
         </plugin>
+        <plugin>
+            <groupId>com.github.spotbugs</groupId>
+            <artifactId>spotbugs-maven-plugin</artifactId>
+            <version>4.10.4.1</version>
+            <configuration>
+                <effort>Max</effort>
+                <threshold>High</threshold>
+            </configuration>
+        </plugin>
     </plugins>
 </build>
 

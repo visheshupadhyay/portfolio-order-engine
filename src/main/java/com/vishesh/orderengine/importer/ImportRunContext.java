@@ -1,7 +1,5 @@
 package com.vishesh.orderengine.importer;
 
-import com.vishesh.orderengine.*;
-
 /*
  * Prototype-scoped, per-import mutable state. Every request to Spring for this
  * bean gets a fresh counter, so separate import runs do not share state.

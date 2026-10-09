@@ -123,12 +123,17 @@ This is an **at-least-once** delivery design. If the process stops after Kafka a
 Docker Compose is the easiest way to run the complete local runtime without
 installing Java, Maven, PostgreSQL, Redis, or Kafka separately.
 
-Create an ignored `.env` file with these two values; never commit it:
+Create your ignored local secrets file from the committed template:
 
-```text
-ORDER_ENGINE_DB_PASSWORD=choose-a-local-password
-JWT_BASE64_SECRET=your-base64-encoded-secret
+```powershell
+Copy-Item .env.example .env
 ```
+
+Open `.env`, replace the two secret placeholder values with your own local values.
+You may also change `POSTGRES_HOST_PORT` from `5432` to a free port such as
+`5433` if PostgreSQL already uses port `5432` on your computer. `ORDER_ENGINE_DB_PASSWORD` is the local PostgreSQL
+password. `JWT_BASE64_SECRET` must be a Base64-encoded secret used to sign
+local JWTs.
 
 Build and start the local environment:
 
@@ -155,8 +160,41 @@ data. Use it only when a fresh local database is intended.
 
 - Java 21
 - Maven
-- PostgreSQL with an empty `order_engine` database; Flyway creates the project schema on first startup
-- A `DB_PASSWORD` environment variable containing the local PostgreSQL password
+- Docker Desktop running
+- A local `.env` created from `.env.example`; never commit `.env`
+
+The current Spring-backed API/configuration tests connect to the local Compose
+PostgreSQL database, while Testcontainers starts additional temporary
+containers for its integration tests. Start the shared local dependencies:
+
+```powershell
+docker compose up -d postgres redis kafka
+```
+
+In each new PowerShell window, load your ignored `.env` values before running
+Maven. Maven does not automatically read `.env` files:
+
+```powershell
+$localEnv = Get-Content .env -Raw | ConvertFrom-StringData
+
+$postgresHostPort = $localEnv.POSTGRES_HOST_PORT
+
+if ([string]::IsNullOrWhiteSpace($postgresHostPort)) {
+    $postgresHostPort = "5432"
+}
+
+$env:DB_URL = "jdbc:postgresql://127.0.0.1:$postgresHostPort/order_engine"
+$env:DB_USERNAME = "order_engine"
+$env:DB_PASSWORD = $localEnv.ORDER_ENGINE_DB_PASSWORD
+$env:JWT_BASE64_SECRET = $localEnv.JWT_BASE64_SECRET
+
+Remove-Variable localEnv, postgresHostPort
+```
+
+If port `5432` is already used by another local PostgreSQL installation, map
+Compose PostgreSQL to a free host port such as `5433` and use that same port in
+`DB_URL`. The Compose application container can remain stopped while Maven
+runs tests; Maven starts its own Order Engine application instance.
 
 Run all tests:
 
