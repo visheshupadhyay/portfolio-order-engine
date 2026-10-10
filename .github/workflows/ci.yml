@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Download repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Java 21 and cache Maven dependencies
         uses: actions/setup-java@v4
