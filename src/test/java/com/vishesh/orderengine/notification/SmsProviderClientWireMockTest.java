@@ -26,6 +26,7 @@ import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import tools.jackson.databind.ObjectMapper;
@@ -41,12 +42,15 @@ public class SmsProviderClientWireMockTest {
 
 		URI providerBaseUri = URI.create("http://localhost:" + wireMockRuntimeInfo.getHttpPort());
 		// 2. Create SmsProviderClient using WireMock's temporary URL.
+		SimpleMeterRegistry simpleMeterRegistry = new SimpleMeterRegistry();
+		SmsDeliveryMetrics smsDeliveryMetrics = new SmsDeliveryMetrics(simpleMeterRegistry);
 		SmsProviderClient client = new SmsProviderClient(
 				HttpClient.newHttpClient(),
 				providerBaseUri, new ObjectMapper(),
 				Duration.ofSeconds(2),
 				CircuitBreaker.ofDefaults("test"),
-				Bulkhead.ofDefaults("test"));
+				Bulkhead.ofDefaults("test"),
+				smsDeliveryMetrics);
 
 		// 3. Call client.send(...).
 		client.send(
@@ -60,6 +64,10 @@ public class SmsProviderClientWireMockTest {
 				.withRequestBody(matchingJsonPath("$.senderName", equalTo("OrderEngine")))
 				.withRequestBody(matchingJsonPath("$.message",
 						equalTo("Order is paid orderID:order-101"))));
+
+		assertEquals(1.0, simpleMeterRegistry.counter("order.notifications.sms.sent").count());
+
+		assertEquals(0.0, simpleMeterRegistry.counter("order.notifications.sms.failed").count());
 	}
 
 	@Test
@@ -69,21 +77,30 @@ public class SmsProviderClientWireMockTest {
 				.willReturn(aResponse().withStatus(500)));
 
 		URI providerBaseUri = URI.create("http://localhost:" + wireMockRuntimeInfo.getHttpPort());
+
+		SimpleMeterRegistry simpleMeterRegistry = new SimpleMeterRegistry();
+		SmsDeliveryMetrics smsDeliveryMetrics = new SmsDeliveryMetrics(simpleMeterRegistry);
 		SmsProviderClient client = new SmsProviderClient(
 				HttpClient.newHttpClient(),
 				providerBaseUri, new ObjectMapper(),
 				Duration.ofSeconds(2),
 				CircuitBreaker.ofDefaults("test"),
-				Bulkhead.ofDefaults("test"));
+				Bulkhead.ofDefaults("test"),
+				smsDeliveryMetrics);
 
-		SmsProviderUnavailableException exception = assertThrows(SmsProviderUnavailableException.class, () -> client.send("OrderEngine",
-				"Order is paid orderID:order-102",
-				"event-43"));
+		SmsProviderUnavailableException exception = assertThrows(SmsProviderUnavailableException.class,
+				() -> client.send("OrderEngine",
+						"Order is paid orderID:order-102",
+						"event-43"));
 
 		assertEquals("SMS provider returned unexpected status: 500", exception.getMessage());
 		verify(1, postRequestedFor(urlEqualTo("/sms"))
 				.withHeader("Content-Type", equalTo("application/json"))
 				.withHeader("Idempotency-Key", equalTo("event-43")));
+
+		assertEquals(0.0, simpleMeterRegistry.counter("order.notifications.sms.sent").count());
+
+		assertEquals(1.0, simpleMeterRegistry.counter("order.notifications.sms.failed").count());
 	}
 
 	@Test
@@ -98,7 +115,8 @@ public class SmsProviderClientWireMockTest {
 				new ObjectMapper(),
 				Duration.ofSeconds(2),
 				CircuitBreaker.ofDefaults("test"),
-				Bulkhead.ofDefaults("test"));
+				Bulkhead.ofDefaults("test"),
+				new SmsDeliveryMetrics(new SimpleMeterRegistry()));
 
 		client.send("OrderEngine", message, "event-44");
 
@@ -122,7 +140,8 @@ public class SmsProviderClientWireMockTest {
 				new ObjectMapper(),
 				Duration.ofMillis(100),
 				CircuitBreaker.ofDefaults("test"),
-				Bulkhead.ofDefaults("test"));
+				Bulkhead.ofDefaults("test"),
+				new SmsDeliveryMetrics(new SimpleMeterRegistry()));
 
 		SmsProviderUnavailableException exception = assertThrows(SmsProviderUnavailableException.class,
 				() -> client.send("OrderEngine", message, "event-42"));
@@ -159,7 +178,8 @@ public class SmsProviderClientWireMockTest {
 				new ObjectMapper(),
 				Duration.ofSeconds(2),
 				circuitBreaker,
-				Bulkhead.ofDefaults("test"));
+				Bulkhead.ofDefaults("test"),
+				new SmsDeliveryMetrics(new SimpleMeterRegistry()));
 
 		String message = "Order \"special\" is paid";
 		assertThrows(RuntimeException.class, () -> client.send("Order-Engine", message, "event-42"));
@@ -171,7 +191,8 @@ public class SmsProviderClientWireMockTest {
 				.withHeader("Idempotency-Key", equalTo("event-42"))
 				.withRequestBody(matchingJsonPath("$.message", equalTo(message))));
 
-		SmsProviderUnavailableException exception = assertThrows(SmsProviderUnavailableException.class, () -> client.send("Order-Engine", message, "event-42"));
+		SmsProviderUnavailableException exception = assertThrows(SmsProviderUnavailableException.class,
+				() -> client.send("Order-Engine", message, "event-42"));
 		assertInstanceOf(CallNotPermittedException.class, exception.getCause());
 		// The rejected third call must not create another HTTP request to WireMock.
 		verify(2, postRequestedFor(urlEqualTo("/sms"))
@@ -184,7 +205,6 @@ public class SmsProviderClientWireMockTest {
 				.willReturn(aResponse().withStatus(202)));
 		assertDoesNotThrow(() -> client.send("Order-Engine", message, "event-42"));
 
-		
 		verify(3, postRequestedFor(urlEqualTo("/sms"))
 				.withHeader("Content-Type", equalTo("application/json"))
 				.withHeader("Idempotency-Key", equalTo("event-42"))

@@ -6,8 +6,10 @@ import com.vishesh.orderengine.security.JwtTokenService;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -53,6 +55,17 @@ public class OrderSecurityTest {
 		String token = jwtTokenService.issue(
 				"order-writer",
 				Set.of("ROLE_ORDER_WRITER"));
+
+		return request -> {
+			request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+			return request;
+		};
+	}
+
+	private RequestPostProcessor adminToken() {
+		String token = jwtTokenService.issue(
+				"order-admin",
+				Set.of("ROLE_ORDER_ADMIN"));
 
 		return request -> {
 			request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
@@ -143,5 +156,31 @@ public class OrderSecurityTest {
 	public void rejectsUnknownPath() throws Exception {
 		mockMvc.perform(get("/internal/not-configured").with(readerToken()))
 				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	public void allowsPrometheusEndpointWithoutCredentials() throws Exception {
+		mockMvc.perform(get("/actuator/prometheus"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("jvm_memory_used_bytes")));
+	}
+
+	@Test
+	public void allowsMetricsEndpointWithAdminCredentials() throws Exception {
+		mockMvc.perform(get("/actuator/metrics")
+				.with(adminToken()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.names").isArray());
+	}
+
+	@Test
+	public void exportsHttpRequestLatencyBuckets() throws Exception {
+		mockMvc.perform(get("/actuator/health"))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(get("/actuator/prometheus"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("http_server_requests_seconds_bucket")));
+
 	}
 }

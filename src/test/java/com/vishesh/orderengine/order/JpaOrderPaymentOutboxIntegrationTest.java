@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.UUID;
-
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,8 +24,11 @@ import com.vishesh.orderengine.outbox.OutboxEventStatus;
 
 @SpringBootTest
 @ActiveProfiles("jpa")
-/* Proves the JPA order adapter and JDBC outbox adapter still share one transaction boundary. */
-public class JpaOrderPaymentOutboxIntegrationTest  extends AbstractPostgresIntegrationTest {
+/*
+ * Proves the JPA order adapter and JDBC outbox adapter still share one
+ * transaction boundary.
+ */
+public class JpaOrderPaymentOutboxIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private OrderPaymentService orderPaymentService;
     @Autowired
@@ -36,6 +39,8 @@ public class JpaOrderPaymentOutboxIntegrationTest  extends AbstractPostgresInteg
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private TransactionTemplate transactionTemplate;
+    @Autowired
+    private MeterRegistry meterRegistry;
     private String savedOrderId;
 
     @AfterEach
@@ -48,18 +53,23 @@ public class JpaOrderPaymentOutboxIntegrationTest  extends AbstractPostgresInteg
 
     @Test
     public void commitsPaidJpaOrderAndPendingJdbcOutboxEvent() {
-        // The profile deliberately combines a JPA order adapter with the reusable JDBC outbox adapter.
+        // The profile deliberately combines a JPA order adapter with the reusable JDBC
+        // outbox adapter.
         assertInstanceOf(JpaOrderRepository.class, orderRepository);
         assertInstanceOf(JdbcOutboxEventRepository.class, outboxEventRepository);
         savedOrderId = "postgres-outbox-integration-test-" + UUID.randomUUID();
         Order order = new Order(savedOrderId, OrderStatus.CREATED);
+        double paymentsBefore = meterRegistry.counter("order.payments.completed").count();
         orderRepository.save(order);
         Order returnedOrder = orderPaymentService.pay(order);
         Order reloadedOrder = orderRepository.findOrderById(savedOrderId).orElseThrow();
-        Long rows = jdbcTemplate.queryForObject("Select count(id) from outbox_events where order_id=?", Long.class, savedOrderId);
+        Long rows = jdbcTemplate.queryForObject("Select count(id) from outbox_events where order_id=?", Long.class,
+                savedOrderId);
         assertEquals(OrderStatus.PAID, reloadedOrder.getStatus());
         assertEquals(OrderStatus.PAID, returnedOrder.getStatus());
         assertEquals(1L, rows);
+        double paymentsAfter = meterRegistry.counter("order.payments.completed").count();
+        assertEquals(paymentsBefore+1, paymentsAfter);
 
     }
 
@@ -68,6 +78,7 @@ public class JpaOrderPaymentOutboxIntegrationTest  extends AbstractPostgresInteg
         savedOrderId = "postgres-outbox-integration-test-" + UUID.randomUUID();
         Order order = new Order(savedOrderId, OrderStatus.CREATED);
         orderRepository.save(order);
+        double paymentsBefore = meterRegistry.counter("order.payments.completed").count();
         assertThrows(IllegalStateException.class, () -> transactionTemplate.executeWithoutResult(status -> {
             orderPaymentService.pay(order);
             // The outer transaction must undo both the JPA update and JDBC insert.
@@ -78,5 +89,6 @@ public class JpaOrderPaymentOutboxIntegrationTest  extends AbstractPostgresInteg
                 Long.class, savedOrderId, OutboxEventStatus.PENDING.name());
         assertEquals(OrderStatus.CREATED, reloadedOrder.getStatus());
         assertEquals(0L, rows);
+        assertEquals(paymentsBefore,meterRegistry.counter("order.payments.completed").count());
     }
 }

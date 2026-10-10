@@ -28,6 +28,7 @@ import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 public class SmsProviderClientBulkheadTest {
     @Test
@@ -58,7 +59,8 @@ public class SmsProviderClientBulkheadTest {
                 new ObjectMapper(),
                 Duration.ofSeconds(2),
                 CircuitBreaker.ofDefaults("test"),
-                bulkhead);
+                bulkhead,
+                new SmsDeliveryMetrics(new SimpleMeterRegistry()));
         ExecutorService threadExecutorService = Executors.newSingleThreadExecutor();
 
         try {

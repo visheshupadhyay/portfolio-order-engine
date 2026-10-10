@@ -27,13 +27,15 @@ public class SmsProviderClient {
     private final Duration requestTimeout;
     private final CircuitBreaker circuitBreaker;
     private final Bulkhead bulkhead;
+    private final SmsDeliveryMetrics smsDeliveryMetrics;
 
     public SmsProviderClient(HttpClient httpClient,
             URI providerBaseUri,
             ObjectMapper objectMapper,
             Duration requestTimeout,
             CircuitBreaker circuitBreaker,
-            Bulkhead bulkhead) {
+            Bulkhead bulkhead,
+            SmsDeliveryMetrics smsDeliveryMetrics) {
 
         this.httpClient = httpClient;
         this.providerBaseUri = providerBaseUri;
@@ -41,6 +43,7 @@ public class SmsProviderClient {
         this.requestTimeout = requestTimeout;
         this.circuitBreaker = circuitBreaker;
         this.bulkhead = bulkhead;
+        this.smsDeliveryMetrics = smsDeliveryMetrics;
     }
 
     public void send(String senderName, String message, String idempotencyKey) {
@@ -48,25 +51,32 @@ public class SmsProviderClient {
         // provider.
         String jsontext = serializeRequest(senderName, message);
 
-        try{
-            bulkhead.executeRunnable(() -> circuitBreaker.executeRunnable(() -> sendToProvider(jsontext, idempotencyKey)));
-        }
-        catch(BulkheadFullException exception) {
-            throw new SmsProviderUnavailableException("SMS provider is temporarily unavailable",exception);
-        }
-        catch(CallNotPermittedException exception) {
-            throw new SmsProviderUnavailableException("SMS provider is temporarily unavailable",exception);
+        try {
+            bulkhead.executeRunnable(
+                    () -> circuitBreaker.executeRunnable(() -> sendToProvider(jsontext, idempotencyKey)));
+            // Count success only after the provider returns 202 through both
+            // resilience guards. Building a request is not a successful hand-off.
+            smsDeliveryMetrics.recordSent();
+        } catch (BulkheadFullException exception) {
+            smsDeliveryMetrics.recordFailed();
+            throw new SmsProviderUnavailableException("SMS provider is temporarily unavailable", exception);
+
+        } catch (CallNotPermittedException exception) {
+            smsDeliveryMetrics.recordFailed();
+            throw new SmsProviderUnavailableException("SMS provider is temporarily unavailable", exception);
+        } catch (SmsProviderUnavailableException exception) {
+            smsDeliveryMetrics.recordFailed();
+            throw exception;
         }
     }
 
     private String serializeRequest(String senderName, String message) {
-        try{
+        try {
             return objectMapper.writeValueAsString(Map.of("senderName", senderName, "message", message));
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("Could not serialize SMS request", exception);
         }
-        catch(JacksonException exception) {
-            throw new IllegalStateException("Could not serialize SMS request",exception);
-        }
-        
+
     }
 
     private void sendToProvider(String jsontext, String idempotencyKey) {

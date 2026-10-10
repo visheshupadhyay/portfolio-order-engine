@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Primary;
 import com.vishesh.orderengine.importer.OrderImportService;
 import com.vishesh.orderengine.notification.AbstractNotifier;
 import com.vishesh.orderengine.notification.EmailNotifier;
+import com.vishesh.orderengine.notification.SmsDeliveryMetrics;
 import com.vishesh.orderengine.notification.SmsNotifier;
 import com.vishesh.orderengine.notification.SmsProviderClient;
 import com.vishesh.orderengine.security.JwtAuthenticationFilter;
@@ -85,15 +86,20 @@ public class OrderEngineConfiguration {
             @Value("${notification.sms.provider-base-url}") String baseURL,
             @Value("${notification.sms.request-timeout}") Duration requestTimeout,
             CircuitBreakerRegistry circuitBreakerRegistry,
-            BulkheadRegistry bulkheadRegistry) {
+            BulkheadRegistry bulkheadRegistry,
+            SmsDeliveryMetrics smsDeliveryMetrics) {
 
+        // The registry names must match application.properties. Resilience4j
+        // reads its thresholds from configuration; this bean only wires the
+        // configured guards and observability counters into the HTTP adapter.
         return new SmsProviderClient(
                 httpClient,
                 URI.create(baseURL),
                 objectMapper,
                 requestTimeout,
                 circuitBreakerRegistry.circuitBreaker("smsProvider"),
-                bulkheadRegistry.bulkhead("smsProvider"));
+                bulkheadRegistry.bulkhead("smsProvider"),
+                smsDeliveryMetrics);
     }
 
     @Bean
