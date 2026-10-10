@@ -12,7 +12,7 @@ RUN mvn -B package -DskipTests
 
 
 # Stage 2: the final image contains only the Java runtime and application.
-FROM eclipse-temurin:21-jre-alpine-3.22
+FROM eclipse-temurin:24-jre-alpine-3.22
 
 # Create a restricted Linux user for the running application.
 RUN addgroup -S orderengine && adduser -S orderengine -G orderengine
