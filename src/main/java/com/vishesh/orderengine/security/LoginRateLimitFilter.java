@@ -15,9 +15,11 @@ import jakarta.servlet.http.HttpServletResponse;
 public class LoginRateLimitFilter extends OncePerRequestFilter {
 
     private final RateLimiter rateLimiter;
+    private final LoginRateLimitMetrics loginRateLimitMetrics;
 
-    public LoginRateLimitFilter(RateLimiter rateLimiter) {
+    public LoginRateLimitFilter(RateLimiter rateLimiter, LoginRateLimitMetrics loginRateLimitMetrics) {
         this.rateLimiter = rateLimiter;
+        this.loginRateLimitMetrics = loginRateLimitMetrics;
     }
 
     @Override
@@ -26,6 +28,9 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
         if (rateLimiter.acquirePermission()) {
             filterChain.doFilter(request, response);
         } else {
+            // Record only the branch that actually returns 429. This lets Grafana
+            // distinguish a genuine attack/burst from ordinary login traffic.
+            loginRateLimitMetrics.recordRejected();
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value()); // HTTP status 429
             response.setContentType(MediaType.APPLICATION_JSON_VALUE); // Content-Type application/json
             response.setCharacterEncoding("UTF-8");

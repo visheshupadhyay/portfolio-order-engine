@@ -27,6 +27,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.vishesh.orderengine.security.JwtAuthenticationFilter;
 import com.vishesh.orderengine.security.LoginRateLimitFilter;
+import com.vishesh.orderengine.security.LoginRateLimitMetrics;
 import com.vishesh.orderengine.security.OrderWriteRateLimitFilter;
 
 import io.github.resilience4j.ratelimiter.RateLimiter;
@@ -45,7 +46,8 @@ public class SecurityConfiguration {
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
-			JwtAuthenticationFilter jwtAuthenticationFilter, RateLimiterRegistry rateLimiterRegistry)
+			JwtAuthenticationFilter jwtAuthenticationFilter, RateLimiterRegistry rateLimiterRegistry,
+			LoginRateLimitMetrics loginRateLimitMetrics)
 			throws Exception {
 
 		// Answer a browser's CORS preflight before authentication or controller
@@ -54,8 +56,14 @@ public class SecurityConfiguration {
 		RateLimiter rateLimiter = rateLimiterRegistry.rateLimiter("orderWrites");
 		OrderWriteRateLimitFilter rateLimiterFilter = new OrderWriteRateLimitFilter(rateLimiter);
 
+
 		RateLimiter loginRateLimiter = rateLimiterRegistry.rateLimiter("loginAttempts");
-		LoginRateLimitFilter loginRateLimitFilter = new LoginRateLimitFilter(loginRateLimiter);
+		// Use Spring's shared MeterRegistry-backed component. Creating a new
+		// registry here would create a private scoreboard that Prometheus cannot see.
+		LoginRateLimitFilter loginRateLimitFilter = new LoginRateLimitFilter(
+				loginRateLimiter,
+				loginRateLimitMetrics);
+
 		return httpSecurity
 				// Missing authentication is 401; a valid user without the required role is 403.
 				.exceptionHandling(exception -> exception
@@ -71,7 +79,7 @@ public class SecurityConfiguration {
 				.addFilterAfter(jwtAuthenticationFilter, LoginRateLimitFilter.class)
 				.addFilterAfter(rateLimiterFilter, JwtAuthenticationFilter.class)
 				.authorizeHttpRequests(authorize -> authorize
-						.requestMatchers("/actuator/health/**").permitAll()
+						.requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
 						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**",
 								"/swagger-ui.html")
 						.permitAll()
@@ -81,8 +89,7 @@ public class SecurityConfiguration {
 						.requestMatchers("/orders/**").authenticated()
 						.requestMatchers(
 								"/actuator/metrics",
-								"/actuator/metrics/**",
-								"/actuator/prometheus")
+								"/actuator/metrics/**")
 						.hasRole("ORDER_ADMIN")
 						.anyRequest().denyAll())
 				// Passwords are accepted only by /auth/login, never by normal order routes.

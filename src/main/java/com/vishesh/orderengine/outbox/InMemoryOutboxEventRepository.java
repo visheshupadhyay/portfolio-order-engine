@@ -163,4 +163,13 @@ public class InMemoryOutboxEventRepository implements OutboxEventRepository {
         }
         return releasedEvents;
     }
+
+    @Override
+    public synchronized long countPendingDueBefore(LocalDateTime cutoff) {
+        // Keep the local/test implementation semantically identical to the SQL
+        // query so the dashboard means the same thing in every profile.
+        return events.stream()
+                .filter(event -> event.status() == OutboxEventStatus.PENDING && !event.nextAttemptAt().isAfter(cutoff))
+                .count();
+    }
 }

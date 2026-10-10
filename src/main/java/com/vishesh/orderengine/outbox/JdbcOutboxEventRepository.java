@@ -65,7 +65,7 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
 		// expired and another worker reclaimed it, this UPDATE changes zero rows.
 		jdbcTemplate.update(
 				"UPDATE outbox_events SET claim_token=null, status = ?,sent_at = ?,last_error = null, claimed_at= null WHERE id = ? and status = ? and claim_token is not null and claim_token=?",
-				OutboxEventStatus.SENT.name(), sentAt, eventId, OutboxEventStatus.PROCESSING.name(),claimToken);
+				OutboxEventStatus.SENT.name(), sentAt, eventId, OutboxEventStatus.PROCESSING.name(), claimToken);
 	}
 
 	@Override
@@ -75,7 +75,7 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
 		jdbcTemplate.update(
 				"UPDATE outbox_events SET claim_token=null, attempt_count = attempt_count + 1 , status = ?,sent_at = ?,last_error = ?,next_attempt_at=?, claimed_at = null WHERE id = ? and status = ? and claim_token is not null and claim_token=?",
 				OutboxEventStatus.PENDING.name(), null, error, nextAttemptAt, eventId,
-				OutboxEventStatus.PROCESSING.name(),claimToken);
+				OutboxEventStatus.PROCESSING.name(), claimToken);
 	}
 
 	@Override
@@ -95,6 +95,20 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
 				OutboxEventStatus.PENDING.name(), claimedBefore, OutboxEventStatus.PROCESSING.name());
 
 		return releasedEvents;
+	}
+
+	@Override
+	public long countPendingDueBefore(LocalDateTime cutoff) {
+        // This intentionally counts only deliverable PENDING work. A SENT event
+        // is history, and PROCESSING has already been claimed by a worker.
+		return jdbcTemplate.queryForObject(
+				"""
+					SELECT count(*) FROM outbox_events
+					WHERE status = ? AND next_attempt_at <= ?
+				""",
+				Long.class,
+				OutboxEventStatus.PENDING.name(),
+				cutoff);
 	}
 
 }

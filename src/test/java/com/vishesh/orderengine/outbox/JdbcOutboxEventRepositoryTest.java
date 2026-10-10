@@ -338,4 +338,14 @@ public class JdbcOutboxEventRepositoryTest extends AbstractPostgresIntegrationTe
 		assertNull(finalEvent.claimToken());
 		assertNull(finalEvent.claimedAt());
 	}
+
+	@Test
+	public void test() {
+		savedOrderId = "order-a-" + UUID.randomUUID();
+		Order order = new Order(savedOrderId, OrderStatus.CREATED);
+		jdbcTemplate.update("Insert into orders (id,status) VALUES (?,?)", order.getId(), order.getStatus().name());
+		outboxEventRepository.enqueueOrderPaid(savedOrderId);
+		assertEquals(0L, outboxEventRepository.countPendingDueBefore(LocalDateTime.now().minusMinutes(1)));
+		assertEquals(1L, outboxEventRepository.countPendingDueBefore(LocalDateTime.now().plusMinutes(1)));
+	}
 }

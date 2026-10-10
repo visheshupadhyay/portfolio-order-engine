@@ -13,6 +13,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.FilterChain;
 
 import static org.mockito.Mockito.verify;
@@ -39,20 +40,22 @@ public class LoginRateLimitFilterTest {
         // config
         RateLimiter tempLimiter = registry.rateLimiter(testName, rateConfig);
 
-        LoginRateLimitFilter rateLimitFilter = new LoginRateLimitFilter(tempLimiter);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        LoginRateLimitMetrics loginRateLimitMetrics = new LoginRateLimitMetrics(meterRegistry);
+        LoginRateLimitFilter rateLimitFilter = new LoginRateLimitFilter(tempLimiter, loginRateLimitMetrics);
         FilterChain filterChain = mock(FilterChain.class);
 
         MockHttpServletRequest firstRequest = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse firstResponse = new MockHttpServletResponse();
         rateLimitFilter.doFilter(firstRequest, firstResponse, filterChain);
         verify(filterChain).doFilter(firstRequest, firstResponse);
-    
+        // registry.getConfiguration(testName)
+        assertEquals(0.0, meterRegistry.counter("order.security.login.rate_limited").count());
         MockHttpServletRequest secondRequest = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse secondResponse = new MockHttpServletResponse();
         rateLimitFilter.doFilter(secondRequest, secondResponse, filterChain);
         verifyNoMoreInteractions(filterChain);
-
-
+        assertEquals(1.0, meterRegistry.counter("order.security.login.rate_limited").count());
         assertEquals(429, secondResponse.getStatus());
         assertTrue(secondResponse.getContentAsString().contains("Too Many Requests"));
 
@@ -78,7 +81,9 @@ public class LoginRateLimitFilterTest {
         // config
         RateLimiter tempLimiter = registry.rateLimiter(testName, rateConfig);
 
-        LoginRateLimitFilter rateLimitFilter = new LoginRateLimitFilter(tempLimiter);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        LoginRateLimitMetrics loginRateLimitMetrics = new LoginRateLimitMetrics(meterRegistry);
+        LoginRateLimitFilter rateLimitFilter = new LoginRateLimitFilter(tempLimiter,loginRateLimitMetrics);
         FilterChain filterChain = mock(FilterChain.class);
 
         MockHttpServletRequest firstRequest = new MockHttpServletRequest("POST", "/orders");
@@ -86,13 +91,12 @@ public class LoginRateLimitFilterTest {
         rateLimitFilter.doFilter(firstRequest, firstResponse, filterChain);
         assertEquals(200, firstResponse.getStatus());
         verify(filterChain).doFilter(firstRequest, firstResponse);
-    
+
         MockHttpServletRequest secondRequest = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse secondResponse = new MockHttpServletResponse();
         rateLimitFilter.doFilter(secondRequest, secondResponse, filterChain);
         verify(filterChain).doFilter(secondRequest, secondResponse);
         assertEquals(200, secondResponse.getStatus());
+        assertEquals(0.0, meterRegistry.counter("order.security.login.rate_limited").count());
     }
 }
-
-

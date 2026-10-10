@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: order-engine
+    # Spring Boot exposes Micrometer metrics here, not on Prometheus's default
+    # /metrics path.
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - app:8080
+  - job_name: kafka-exporter
+    # Kafka Exporter already speaks Prometheus's default /metrics format and
+    # adds broker, topic, and consumer-group lag information.
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - kafka-exporter:9308

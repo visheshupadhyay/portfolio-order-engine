@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -221,5 +222,13 @@ public class InMemoryOutboxEventRepositoryTest {
 		assertEquals(OutboxEventStatus.SENT, finalEvent.status());
 		assertNull(finalEvent.claimToken());
 		assertNull(finalEvent.claimedAt());
+	}
+
+	@Test
+	public void returnsZeroBeforePendingEventIsDueAndOneAfterItIsDue() {
+		InMemoryOutboxEventRepository repository = new InMemoryOutboxEventRepository();
+		repository.enqueueOrderPaid("order-101");
+		assertEquals(0L,repository.countPendingDueBefore(LocalDateTime.now().minusMinutes(1)));
+		assertEquals(1L,repository.countPendingDueBefore(LocalDateTime.now().plusMinutes(1)));
 	}
 }

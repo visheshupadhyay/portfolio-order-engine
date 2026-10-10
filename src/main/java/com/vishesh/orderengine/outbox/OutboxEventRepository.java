@@ -10,7 +10,8 @@ import java.util.List;
  * to PENDING after its lease expires.
  */
 public interface OutboxEventRepository {
-    // Called inside the payment transaction; the inserted row must commit with PAID.
+    // Called inside the payment transaction; the inserted row must commit with
+    // PAID.
     void enqueueOrderPaid(String orderId);
 
     // Atomically claims due PENDING work. Returned records carry the temporary
@@ -19,7 +20,7 @@ public interface OutboxEventRepository {
 
     // The id + token pair prevents an old worker from changing an event reclaimed
     // by a newer worker. A sent event is no longer eligible for the PENDING query.
-    void markSent(long eventId,  String claimToken,LocalDateTime sentAt);
+    void markSent(long eventId, String claimToken, LocalDateTime sentAt);
 
     // Retains failed work for a later attempt and records why this attempt failed.
     void rescheduleAfterFailure(long eventId, String claimToken, String error, LocalDateTime nextAttemptAt);
@@ -30,4 +31,8 @@ public interface OutboxEventRepository {
     // Recovers only leases claimed at or before the cutoff; it does not count as
     // a provider failure, so it does not increment attemptCount.
     int releaseExpiredClaims(LocalDateTime claimedBefore);
+
+    // Used by the overdue-backlog Gauge. "Due before" includes events whose
+    // retry time has arrived, but excludes events already being processed or sent.
+    long countPendingDueBefore(LocalDateTime cutoff);
 }
