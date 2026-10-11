@@ -56,7 +56,6 @@ public class SecurityConfiguration {
 		RateLimiter rateLimiter = rateLimiterRegistry.rateLimiter("orderWrites");
 		OrderWriteRateLimitFilter rateLimiterFilter = new OrderWriteRateLimitFilter(rateLimiter);
 
-
 		RateLimiter loginRateLimiter = rateLimiterRegistry.rateLimiter("loginAttempts");
 		// Use Spring's shared MeterRegistry-backed component. Creating a new
 		// registry here would create a private scoreboard that Prometheus cannot see.
@@ -127,17 +126,21 @@ public class SecurityConfiguration {
 		/*
 		 * Spring Security's CORS support looks up this bean by its type.
 		 * It grants browser permission only to our local frontend and only
-		 * for the order API; authentication and role checks still happen
+		 * for the frontend API paths below; authentication and role checks still happen
 		 * afterwards for the real request.
 		 */
 		CorsConfiguration corsConfiguration = new CorsConfiguration();
-		corsConfiguration.setAllowedOrigins(List.of("http://localhost:3000"));
+		corsConfiguration.setAllowedOrigins(List.of("http://localhost:5173"));
 		corsConfiguration.setAllowedMethods(List.of("GET", "POST"));
 		corsConfiguration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/orders/**", corsConfiguration);
 		source.registerCorsConfiguration("/auth/**", corsConfiguration);
+		// The admin React screen needs browser permission to request the protected
+		// metrics catalogue. The authorization rule above still requires ORDER_ADMIN.
+		source.registerCorsConfiguration("/actuator/metrics", corsConfiguration);
+		source.registerCorsConfiguration("/actuator/metrics/**", corsConfiguration);
 		return source;
 	}
 

@@ -16,7 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 /*
  * A CORS preflight is an OPTIONS request sent by a browser before a cross-origin
  * request. These tests protect both sides of the policy: our frontend is allowed
- * and an untrusted origin is rejected before it can call the order API.
+ * and an untrusted origin is rejected before it can call protected API paths.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -27,12 +27,23 @@ public class OrderCORSTest {
     @Test
     public void allowsOrderApiPreflightFromLocalFrontend() throws Exception {
         mockMvc.perform(options("/orders")
-                .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                .header(HttpHeaders.ORIGIN, "http://localhost:5173")
                 .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(
                         HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN,
-                        "http://localhost:3000"));
+                        "http://localhost:5173"));
+    }
+
+    @Test
+    public void allowsMetricsPreflightFromLocalFrontend() throws Exception {
+        mockMvc.perform(options("/actuator/metrics")
+                .header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN,
+                        "http://localhost:5173"));
     }
 
     @Test
