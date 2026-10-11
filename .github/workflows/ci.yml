@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Download repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Java 21 and cache Maven dependencies
         uses: actions/setup-java@v4
@@ -73,7 +73,7 @@ jobs:
 
     steps:
       - name: Download repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node.js 24 and cache npm dependencies
         uses: actions/setup-node@v4
