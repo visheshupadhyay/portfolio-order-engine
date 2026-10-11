@@ -1,7 +1,6 @@
+import { API_BASE_URL } from '../config'
 import type { MetricDetails, MetricNamesResponse } from './contracts'
 import { SessionExpiredError } from './apiErrors'
-
-const API_BASE_URL = 'http://localhost:8080'
 
 // This calls Spring Boot's existing protected Actuator endpoint. It returns
 // metric names; Grafana remains responsible for historical charts and alerts.

@@ -96,9 +96,13 @@ function Dashboard({
     return (
         <main className="dashboard-shell">
             <header className="dashboard-header">
-                <div>
-                    <p className="eyebrow">ORDER ENGINE</p>
-                    <h1>Orders</h1>
+                <div className="workspace-title">
+                    <span className="brand-mark" aria-hidden="true">OE</span>
+                    <div>
+                        <span className="role-pill">Reader workspace</span>
+                        <h1>Orders</h1>
+                        <p>Find and monitor the latest persisted order state.</p>
+                    </div>
                 </div>
 
                 <button type="button" onClick={onSignOut}>
@@ -106,8 +110,32 @@ function Dashboard({
                 </button>
             </header>
 
+            <section className="summary-grid" aria-label="Order overview">
+                <article className="summary-card summary-card-primary">
+                    <span>Matching orders</span>
+                    <strong>{totalElements}</strong>
+                    <small>For the selected status</small>
+                </article>
+                <article className="summary-card">
+                    <span>Current page</span>
+                    <strong>{page + 1}</strong>
+                    <small>of {totalPages}</small>
+                </article>
+                <article className="summary-card">
+                    <span>Active view</span>
+                    <strong className="summary-card-label">{status ?? 'ALL'}</strong>
+                    <small>Order status filter</small>
+                </article>
+            </section>
+
             <section className="orders-panel" aria-labelledby="orders-heading">
-                <h2 id="orders-heading">Your orders</h2>
+                <div className="section-heading">
+                    <div>
+                        <p className="eyebrow">ORDER DIRECTORY</p>
+                        <h2 id="orders-heading">Your orders</h2>
+                    </div>
+                    <span className="live-indicator"><i aria-hidden="true" />Live API data</span>
+                </div>
                 <div className="filter-row">
                     <label htmlFor="order-status">Status</label>
 

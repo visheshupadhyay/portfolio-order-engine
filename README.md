@@ -20,12 +20,13 @@ The project is deliberately built in small, tested steps. It demonstrates backen
 - Redis cache-aside reads keep PostgreSQL as the source of truth; a stale cache entry is evicted after a successful payment.
 - Kafka decouples paid-order publication from notification delivery. Consumers deduplicate by event ID and use retry/dead-letter-topic handling for failures.
 - Docker Compose runs the application with PostgreSQL, Redis, and Kafka locally; GitHub Actions runs the full test suite and validates the Docker image build.
+- A responsive React and TypeScript frontend provides JWT login plus dedicated reader, writer, and administrator workspaces. Vitest and Testing Library cover its authentication, role, order, metric, and API-client behavior.
 - Unit, MockMvc, JDBC, JPA, and PostgreSQL-backed integration tests.
 
 ## Architecture
 
 ```text
-HTTP client / startup import
+React frontend / HTTP client / startup import
             |
             v
 Controller / OrderImportService
@@ -229,6 +230,40 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=postgres"
 
 The application reads its database password from `DB_PASSWORD`; do not commit passwords to `application.properties`.
 
+## Run the React frontend
+
+Start the Spring Boot API on port `8080`, then open another PowerShell terminal:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173`. The UI selects a workspace from the authenticated
+JWT role:
+
+- readers list, filter, paginate, and look up orders;
+- writers create orders and mark them as paid;
+- administrators inspect protected application metrics.
+
+The frontend defaults to `http://localhost:8080`. Copy
+`frontend/.env.example` to `frontend/.env.local` when another backend address
+is required. Browser environment variables are public configuration and must
+never contain passwords or signing keys.
+
+Verify the frontend independently:
+
+```powershell
+cd frontend
+npm run lint
+npm test
+npm run build
+```
+
+See [the frontend guide](frontend/README.md) for its role model, configuration,
+security boundary, and test coverage.
+
 ## Project structure
 
 ```text
@@ -249,11 +284,12 @@ src/main/java/com/vishesh/orderengine/
 
 ## Current scope and next steps
 
-This is a modular-monolith backend project, not yet a complete production
-service. It already includes Flyway migrations, Docker Compose, Redis cache
-aside, Kafka/outbox reliability patterns, JWT security, resilience controls,
-and GitHub Actions CI. The next planned improvements include a frontend,
-production deployment infrastructure, and further operational hardening.
+This is a full-stack modular-monolith learning project, not a claim of a fully
+managed production service. It includes the React interface, Flyway migrations,
+Docker Compose, Redis cache aside, Kafka/outbox reliability patterns, JWT
+security, resilience controls, observability, Kubernetes manifests, and GitHub
+Actions CI. Remaining capstone work focuses on cloud architecture, performance
+and failure evidence, deployment choices, and final operational documentation.
 
 ## Kubernetes local learning environment
 

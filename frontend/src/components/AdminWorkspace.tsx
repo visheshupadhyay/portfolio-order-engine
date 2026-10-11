@@ -97,10 +97,13 @@ function AdminWorkspace({
   return (
     <main className="dashboard-shell">
       <header className="dashboard-header">
-        <div>
-          <p className="eyebrow">Order Engine administration</p>
-          <h1>Application metrics</h1>
-          <p>Use Grafana for charts and alerts. This screen shows the metrics the application currently exposes.</p>
+        <div className="workspace-title">
+          <span className="brand-mark" aria-hidden="true">OE</span>
+          <div>
+            <span className="role-pill">Administrator workspace</span>
+            <h1>Application metrics</h1>
+            <p>Inspect live values here and use Grafana for history, dashboards, and alerts.</p>
+          </div>
         </div>
 
         <button type="button" onClick={onSignOut}>
@@ -108,9 +111,30 @@ function AdminWorkspace({
         </button>
       </header>
 
+      <section className="summary-grid" aria-label="Metrics overview">
+        <article className="summary-card summary-card-primary">
+          <span>Exposed metrics</span>
+          <strong>{metricNames.length}</strong>
+          <small>Reported by Spring Boot</small>
+        </article>
+        <article className="summary-card">
+          <span>Visible results</span>
+          <strong>{visibleMetricNames.length}</strong>
+          <small>After search filtering</small>
+        </article>
+        <article className="summary-card">
+          <span>Inspector</span>
+          <strong className="summary-card-label">
+            {selectedMetricName ? 'ACTIVE' : 'READY'}
+          </strong>
+          <small>{selectedMetricName ? 'Metric selected' : 'Select a metric'}</small>
+        </article>
+      </section>
+
       <section className="metrics-panel" aria-labelledby="metrics-heading">
         <div className="metrics-panel-header">
           <div>
+            <p className="eyebrow">LIVE TELEMETRY</p>
             <h2 id="metrics-heading">Available metrics</h2>
             <p>
               Showing {visibleMetricNames.length} of {metricNames.length} metric names exposed by Spring Boot.

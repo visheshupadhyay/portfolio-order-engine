@@ -1,7 +1,6 @@
+import { API_BASE_URL } from '../config'
 import type { Order, OrderPage, OrderStatus } from './contracts'
 import { SessionExpiredError } from './apiErrors'
-
-const API_BASE_URL = 'http://localhost:8080'
 
 export async function getOrders(
     accessToken: string,
