@@ -1,6 +1,5 @@
+import { API_BASE_URL } from '../config'
 import type { LoginRequest, LoginResponse } from './contracts'
-
-const API_BASE_URL = 'http://localhost:8080'
 
 export async function login(
   loginRequest: LoginRequest,

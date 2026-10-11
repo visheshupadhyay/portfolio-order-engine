@@ -1,75 +1,101 @@
-# React + TypeScript + Vite
+# Order Engine frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React and TypeScript browser interface for the Portfolio Order Engine. The UI
+uses the Spring Boot API for authentication, order operations, and protected
+application metrics.
 
-Currently, two official plugins are available:
+## Available workspaces
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The backend places one application role in each JWT. The frontend reads that
+role to choose a helpful screen, while Spring Security remains responsible for
+enforcing the real authorization boundary.
 
-## React Compiler
+| Role | Workspace | Capabilities |
+| --- | --- | --- |
+| `ROLE_ORDER_READER` | Order dashboard | List, filter, paginate, and look up orders |
+| `ROLE_ORDER_WRITER` | Order actions | Create orders and mark them as paid |
+| `ROLE_ORDER_ADMIN` | Administration | Search and inspect protected Actuator metrics |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Prerequisites
 
-## Expanding the ESLint configuration
+- Node.js 24
+- npm 11 or later
+- the Order Engine backend running and reachable from the browser
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+The local backend normally listens on `http://localhost:8080`.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Local development
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+From the `frontend` directory:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```powershell
+npm ci
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Open `http://localhost:5173`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Vite reloads the page automatically when frontend source files change. The
+Spring Boot backend must run separately.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## API configuration
 
+The UI defaults to:
+
+```text
+http://localhost:8080
 ```
+
+To use another backend, copy `.env.example` to `.env.local` and change:
+
+```dotenv
+VITE_API_BASE_URL=https://your-api.example.com
+```
+
+`.env.local` is ignored by Git. Vite variables are visible in the browser, so
+never place passwords, JWT signing keys, database credentials, or other secrets
+in them.
+
+## Verification commands
+
+```powershell
+npm run lint
+npm test
+npm run build
+```
+
+- `lint` checks TypeScript and React source quality.
+- `test` runs the Vitest and Testing Library suite once.
+- `build` type-checks the project and creates the production files in `dist`.
+
+During development, tests can remain active with:
+
+```powershell
+npm run test:watch
+```
+
+## Test coverage
+
+The frontend tests cover:
+
+- JWT role parsing, invalid tokens, and expiry;
+- rejected and successful login flows;
+- reader, writer, and administrator workspace selection;
+- session restoration, sign-out, and unauthorized responses;
+- order filtering and exact-ID lookup;
+- order creation and payment behavior;
+- metric search, selection, values, and failures;
+- HTTP URLs, query parameters, request bodies, bearer headers, and safe errors.
+
+The tests mock the network boundary so they remain fast and deterministic. The
+Spring Boot suite separately verifies real authentication, authorization,
+PostgreSQL, Redis, Kafka, and end-to-end reliability behavior.
+
+## Security boundary
+
+The JWT is kept in `sessionStorage`. It survives a refresh in the same browser
+tab and is removed when the tab/window session ends or the user signs out.
+
+Reading a role in React is only a user-interface decision. It is not a security
+check. Every protected API request still sends the bearer token to Spring Boot,
+which validates its signature, expiry, issuer, and required role.

@@ -140,11 +140,18 @@ function App() {
   return (
     <main className="app-shell">
       <section className="login-card" aria-labelledby="login-heading">
-        <p className="eyebrow">ORDER ENGINE</p>
-        <h1 id="login-heading">Sign in</h1>
-        <p className="intro">
-          Use your authorized account to manage orders.
-        </p>
+        <div className="login-brand" aria-hidden="true">
+          <span className="brand-mark">OE</span>
+          <span>Portfolio operations</span>
+        </div>
+
+        <div className="login-heading-group">
+          <p className="eyebrow">SECURE ORDER ENGINE</p>
+          <h1 id="login-heading">Welcome back</h1>
+          <p className="intro">
+            Sign in to enter your role-specific operations workspace.
+          </p>
+        </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <label htmlFor="username">Username</label>
@@ -175,6 +182,11 @@ function App() {
             {isSubmitting ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        <div className="login-assurance">
+          <span className="assurance-dot" aria-hidden="true" />
+          Protected by short-lived JWT access and server-side role checks
+        </div>
 
         {errorMessage && (
           <p className="form-error" role="alert">

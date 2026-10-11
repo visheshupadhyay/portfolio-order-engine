@@ -97,10 +97,13 @@ function WriterWorkspace({
   return (
     <main className="dashboard-shell">
       <header className="dashboard-header">
-        <div>
-          <p className="eyebrow">Order writer workspace</p>
-          <h1>Create and pay orders</h1>
-          <p>Payment is saved first; notification delivery happens safely in the background.</p>
+        <div className="workspace-title">
+          <span className="brand-mark" aria-hidden="true">OE</span>
+          <div>
+            <span className="role-pill">Writer workspace</span>
+            <h1>Create and pay orders</h1>
+            <p>Commit business state first; deliver notifications safely in the background.</p>
+          </div>
         </div>
 
         <button type="button" className="secondary-button" onClick={onSignOut}>
@@ -108,12 +111,23 @@ function WriterWorkspace({
         </button>
       </header>
 
-      {successMessage && <p className="form-message">{successMessage}</p>}
-      {errorMessage && <p className="form-error">{errorMessage}</p>}
+      <section className="delivery-flow" aria-label="Payment notification flow">
+        <div><span>1</span><strong>Payment</strong><small>Commit PAID</small></div>
+        <i aria-hidden="true">→</i>
+        <div><span>2</span><strong>Outbox</strong><small>Save event</small></div>
+        <i aria-hidden="true">→</i>
+        <div><span>3</span><strong>Kafka</strong><small>Publish safely</small></div>
+        <i aria-hidden="true">→</i>
+        <div><span>4</span><strong>Notification</strong><small>Send SMS</small></div>
+      </section>
+
+      {successMessage && <p className="form-message workspace-message">{successMessage}</p>}
+      {errorMessage && <p className="form-error workspace-message">{errorMessage}</p>}
 
       <section className="writer-grid" aria-label="Order actions">
         <article className="writer-card">
-          <p className="eyebrow">Step 1</p>
+          <div className="writer-card-icon" aria-hidden="true">+</div>
+          <p className="eyebrow">STEP 1 · REGISTER</p>
           <h2>Create an order</h2>
           <p>The new order begins with the status <strong>CREATED</strong>.</p>
 
@@ -134,7 +148,8 @@ function WriterWorkspace({
         </article>
 
         <article className="writer-card">
-          <p className="eyebrow">Step 2</p>
+          <div className="writer-card-icon writer-card-icon-paid" aria-hidden="true">✓</div>
+          <p className="eyebrow">STEP 2 · SETTLE</p>
           <h2>Mark an order as paid</h2>
           <p>This changes the order to <strong>PAID</strong> and starts the notification workflow.</p>
 
