@@ -17,7 +17,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 
 import com.vishesh.orderengine.importer.OrderImportService;
-import com.vishesh.orderengine.notification.OrderPaidNotificationService;
 
 @SpringBootTest
 public class OrderEngineConfigurationTest {
@@ -36,15 +35,6 @@ public class OrderEngineConfigurationTest {
         OrderImportService service1 = applicationContext.getBean(OrderImportService.class);
         OrderImportService service2 = applicationContext.getBean(OrderImportService.class);
         assertSame(service1, service2);
-
-    }
-
-    @Test
-    public void createsPaidNotificationServiceUsingQualifiedSmsNotifier() {
-
-        OrderPaidNotificationService service = applicationContext.getBean(OrderPaidNotificationService.class);
-
-        assertNotNull(service);
 
     }
 

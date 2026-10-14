@@ -1,0 +1,30 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+
+metadata:
+  name: order-engine
+  namespace: order-engine
+
+spec:
+  # This HPA controls the existing Order Engine Deployment.
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-engine
+
+  # Always keep at least two application copies available.
+  minReplicas: 2
+
+  # For this local exercise, never create more than five copies.
+  maxReplicas: 5
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+
+          # Average CPU across the pods should stay around 60%
+          # of each pod's configured CPU request.
+          averageUtilization: 60
