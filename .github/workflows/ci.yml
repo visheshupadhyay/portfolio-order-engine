@@ -39,6 +39,9 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+          cache-dependency-path: |
+            pom.xml
+            notification-service/pom.xml
 
       - name: Confirm Docker is available
         run: docker version
@@ -49,11 +52,22 @@ jobs:
       - name: Run the complete test suite
         run: mvn -B test
 
+      - name: Run Notification Service tests
+        working-directory: notification-service
+        run: mvn -B test
+
+      - name: Run Notification Service SpotBugs static analysis
+        working-directory: notification-service
+        run: mvn -B spotbugs:check
+
       - name: Run SpotBugs static analysis
         run: mvn -B spotbugs:check
       
       - name: Build the Docker image
         run: docker build --tag portfolio-order-engine:ci .
+
+      - name: Build the Notification Service Docker image
+        run: docker build --tag portfolio-notification-service:ci ./notification-service
 
       - name: Show service logs if tests fail
         if: failure()

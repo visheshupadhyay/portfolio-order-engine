@@ -21,11 +21,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 import com.vishesh.orderengine.importer.OrderImportService;
-import com.vishesh.orderengine.notification.AbstractNotifier;
-import com.vishesh.orderengine.notification.EmailNotifier;
-import com.vishesh.orderengine.notification.SmsDeliveryMetrics;
-import com.vishesh.orderengine.notification.SmsNotifier;
-import com.vishesh.orderengine.notification.SmsProviderClient;
 import com.vishesh.orderengine.security.JwtAuthenticationFilter;
 import com.vishesh.orderengine.security.JwtProperties;
 import com.vishesh.orderengine.security.JwtTokenService;
@@ -34,16 +29,6 @@ import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class OrderEngineConfiguration {
-    @Bean
-    @Primary
-    public AbstractNotifier emailNotifier() {
-        return new EmailNotifier("orders@example.com");
-    }
-
-    @Bean
-    public AbstractNotifier smsNotifier(SmsProviderClient smsProviderClient) {
-        return new SmsNotifier("OrderEngine", smsProviderClient);
-    }
 
     // Spring reads this value from application.properties, so each environment
     // can choose its input file without changing Java code.
@@ -79,27 +64,6 @@ public class OrderEngineConfiguration {
         return new JwtTokenService(jwtProperties.issuer(), jwtProperties.base64Secret(), jwtProperties.accessTokenTtl(),
                 clock);
 
-    }
-
-    @Bean
-    public SmsProviderClient smsProviderClient(HttpClient httpClient, ObjectMapper objectMapper,
-            @Value("${notification.sms.provider-base-url}") String baseURL,
-            @Value("${notification.sms.request-timeout}") Duration requestTimeout,
-            CircuitBreakerRegistry circuitBreakerRegistry,
-            BulkheadRegistry bulkheadRegistry,
-            SmsDeliveryMetrics smsDeliveryMetrics) {
-
-        // The registry names must match application.properties. Resilience4j
-        // reads its thresholds from configuration; this bean only wires the
-        // configured guards and observability counters into the HTTP adapter.
-        return new SmsProviderClient(
-                httpClient,
-                URI.create(baseURL),
-                objectMapper,
-                requestTimeout,
-                circuitBreakerRegistry.circuitBreaker("smsProvider"),
-                bulkheadRegistry.bulkhead("smsProvider"),
-                smsDeliveryMetrics);
     }
 
     @Bean

@@ -122,6 +122,59 @@ The Deployment keeps two healthy application Pods. It injects non-secret
 values from the ConfigMap and sensitive values from the Secret. Startup,
 liveness, and readiness probes use Spring Boot Actuator health endpoints.
 
+## Horizontal Pod Autoscaler exercise
+
+The tracked `order-engine-hpa.yaml` scales the Deployment between two and five
+Pods. Its CPU target is 60% of the Deployment's configured CPU request, not
+60% of the laptop's total CPU.
+
+The HPA requires the Kubernetes Metrics API. Docker Desktop learning clusters
+may not include Metrics Server, so install it and wait for it to become ready:
+
+```powershell
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl rollout status deployment/metrics-server -n kube-system --timeout=120s
+kubectl top nodes
+```
+
+If the local Metrics Server log reports that the Docker Desktop kubelet
+certificate does not contain the node IP, edit its Deployment and add
+`--kubelet-insecure-tls` to the metrics-server container arguments. This is a
+local learning workaround only; do not weaken production TLS verification.
+
+Apply and inspect the HPA:
+
+```powershell
+kubectl apply -f k8s/order-engine-hpa.yaml
+kubectl get hpa -n order-engine
+kubectl top pods -n order-engine
+```
+
+Create temporary traffic in the cluster, then watch the HPA and Pods from
+separate terminals:
+
+```powershell
+kubectl run load-generator -n order-engine `
+  --image=busybox:1.36 `
+  --restart=Never `
+  --command -- sh -c 'while true; do wget -q -O- http://order-engine:8080/actuator/health > /dev/null; done'
+
+kubectl get hpa -n order-engine --watch
+kubectl get pods -n order-engine -l app=order-engine --watch
+```
+
+Delete the temporary generator when the scale-up has been observed:
+
+```powershell
+kubectl delete pod load-generator -n order-engine
+```
+
+The HPA waits before removing Pods after load falls, so scale-down is not
+instant. This stabilization avoids repeatedly adding and removing Pods when a
+metric briefly moves above and below the target. Application Pods can scale
+only while the node has capacity; production EKS also needs node autoscaling
+when newly requested Pods cannot be scheduled.
+
 ## Verify the API
 
 Expose the internal Kubernetes Service only to the local machine for testing:

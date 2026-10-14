@@ -6,6 +6,27 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  postgres-init:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: "${ORDER_ENGINE_DB_PASSWORD:?Set ORDER_ENGINE_DB_PASSWORD in .env}"
+    command:
+      - psql
+      - -h
+      - postgres
+      - -U
+      - order_engine
+      - -d
+      - order_engine
+      - -f
+      - /scripts/01-create-notification-service-db.sql
+    volumes:
+      - ./postgres/init:/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -21,6 +42,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
   app:
     build:
       context: .
@@ -28,6 +50,7 @@ services:
     ports:
       - "8081:8080"
     environment:
+      SPRING_PROFILES_ACTIVE: jpa,local
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       # Compose service names become DNS hostnames on its private network.
       REDIS_HOST: redis
@@ -38,8 +61,7 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/order_engine
       DB_USERNAME: order_engine
       DB_PASSWORD: "${ORDER_ENGINE_DB_PASSWORD:?Set ORDER_ENGINE_DB_PASSWORD in .env}"
-      OUTBOX_DELIVERY_ENABLED: "false"
-      SMS_PROVIDER_BASE_URL: http://localhost:8089
+      OUTBOX_DELIVERY_ENABLED: "true"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/actuator/health || exit 1"]
       interval: 10s
@@ -52,21 +74,22 @@ services:
 
   kafka:
     # Durable event log used by the outbox worker and independent consumers.
-    # One local Kafka broker. It has one internal door for Compose services
-    # and one host-facing door for commands run from Windows.
+    # One local Kafka broker with a separate advertised address for each
+    # client location. Kafka clients must be able to reach the address that
+    # the broker returns after their initial bootstrap connection.
     image: apache/kafka:4.3.1
     hostname: kafka
     ports:
-      # Windows tools use localhost:9092. Compose services use kafka:19092;
-      # Kafka must advertise both addresses because clients connect using the
-      # address returned in broker metadata after their first connection.
+      # Windows/Maven use localhost:9092, Compose uses kafka:19092, and the
+      # local Kubernetes learning cluster enters through the host on 39092.
       - "9092:9092"
+      - "39092:39092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: "broker,controller"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
-      KAFKA_LISTENERS: "CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:19092"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT_HOST://localhost:9092,PLAINTEXT://kafka:19092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,K8S:PLAINTEXT"
+      KAFKA_LISTENERS: "CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:19092,K8S://:39092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT_HOST://localhost:9092,PLAINTEXT://kafka:19092,K8S://host.docker.internal:39092"
       KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
@@ -90,6 +113,37 @@ services:
       kafka:
         condition: service_started
 
+  notification-service:
+    build:
+      context: ./notification-service
+    image: portfolio-notification-service:1.0
+    ports:
+      - "8082:8082"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      NOTIFICATION_DB_URL: jdbc:postgresql://postgres:5432/notification_service
+      DB_USERNAME: order_engine
+      DB_PASSWORD: "${ORDER_ENGINE_DB_PASSWORD:?Set ORDER_ENGINE_DB_PASSWORD in .env}"
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: "true"
+      SMS_PROVIDER_BASE_URL: http://sms-provider-stub:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      sms-provider-stub:
+        condition: service_started
+      postgres-init:
+        condition: service_completed_successfully
+
+  sms-provider-stub:
+    image: wiremock/wiremock:3.13.2
+    ports:
+      - "8089:8080"
+    volumes:
+      - ./notification-service/sms-provider-stub/mappings:/home/wiremock/mappings:ro
+
+
   prometheus:
     # Pulls metrics from the app and Kafka Exporter on a fixed schedule.
     image: prom/prometheus:v3.13.3
@@ -101,6 +155,7 @@ services:
     depends_on:
       app:
         condition: service_healthy
+
   grafana:
     # Displays Prometheus data. Dashboard definitions are mounted read-only from
     # this repository so the useful local dashboard can be reproduced.
@@ -118,10 +173,12 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+
   alert-receiver:
     image: mendhak/http-https-echo:42
     ports:
       - "18080:8080"
+
 # A named volume keeps PostgreSQL data when containers are recreated.
 volumes:
   postgres_data:

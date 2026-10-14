@@ -1,6 +1,6 @@
 # Portfolio Order Engine
 
-A Java 21 / Spring Boot order-management learning project that has grown from file import and in-memory storage into a secured REST API with PostgreSQL, JDBC, and JPA/Hibernate persistence paths.
+A Java 21 / Spring Boot order-management learning project that has grown from file import and in-memory storage into a secured REST API and a separately deployable Notification Service. It uses PostgreSQL, JDBC, JPA/Hibernate, Redis, Kafka, and a transactional outbox.
 
 The project is deliberately built in small, tested steps. It demonstrates backend concepts that matter in production: validation, error contracts, authorization, transactional state changes, database constraints, query performance, and optimistic locking.
 
@@ -18,8 +18,8 @@ The project is deliberately built in small, tested steps. It demonstrates backen
 - Offset pagination for numbered pages and totals, plus cursor pagination for sequential load-more reads without a total-count query.
 - A transactional outbox persists notification work with the payment transaction, then a retrying worker delivers it after commit.
 - Redis cache-aside reads keep PostgreSQL as the source of truth; a stale cache entry is evicted after a successful payment.
-- Kafka decouples paid-order publication from notification delivery. Consumers deduplicate by event ID and use retry/dead-letter-topic handling for failures.
-- Docker Compose runs the application with PostgreSQL, Redis, and Kafka locally; GitHub Actions runs the full test suite and validates the Docker image build.
+- Kafka decouples Order Engine from the independent Notification Service. Order Engine publishes paid-order events through its transactional outbox; Notification Service owns duplicate protection, SMS-provider resilience, retry, and dead-letter-topic handling.
+- Docker Compose runs Order Engine, Notification Service, PostgreSQL, Redis, Kafka, and a local SMS-provider stub; GitHub Actions tests both backend services and validates both Docker image builds.
 - A responsive React and TypeScript frontend provides JWT login plus dedicated reader, writer, and administrator workspaces. Vitest and Testing Library cover its authentication, role, order, metric, and API-client behavior.
 - Unit, MockMvc, JDBC, JPA, and PostgreSQL-backed integration tests.
 
@@ -54,9 +54,20 @@ PROCESSING claim (lease + token)
             |
             v
 OutboxEventDeliveryWorker --> Kafka order-paid topic
-            |                         |
-            v                         v
-      SENT / retry later / FAILED   notification consumer --> SMS provider
+            |
+            v
+      SENT / retry later / FAILED
+
+Kafka order-paid topic
+            |
+            v
+Independent Notification Service
+            |
+            +--> notification_service PostgreSQL database
+            |    (processed event IDs / duplicate protection)
+            |
+            v
+       SMS provider
 ```
 
 The controller and service depend on `OrderRepository`, not on a database technology. Spring chooses an implementation through profiles:
@@ -117,7 +128,23 @@ Paying an order does not call an external provider inside the payment request. I
 
 The scheduler is deliberately opt-in. Set `OUTBOX_DELIVERY_ENABLED=true` in a deployed environment to enable its five-second polling loop. It stays disabled by default so test-created `PENDING` rows cannot be consumed by a background job.
 
-This is an **at-least-once** delivery design. If the process stops after Kafka accepts an event but before its outbox row is marked `SENT`, it can be published again. The notification consumer records completed event IDs so a repeated Kafka message does not send a repeated customer notification. Temporary consumer failures are retried; exhausted messages go to `order-paid.DLT` for investigation.
+This is an **at-least-once** delivery design. If Order Engine stops after Kafka accepts an event but before its outbox row is marked `SENT`, it can publish that event again. Notification Service owns the consumer-side duplicate protection in its separate `notification_service` database, so a repeated Kafka message does not send a repeated customer notification. Temporary Notification Service or SMS-provider failures are retried; exhausted messages go to `order-paid.DLT` for investigation.
+
+## Notification Service boundary
+
+Order Engine owns order creation, payment state, and reliable publication of
+`order-paid` events. It does not send SMS messages.
+
+Notification Service is an independent Spring Boot project in
+`notification-service/`. It owns:
+
+- Kafka consumption of `order-paid` events;
+- its own `notification_service` PostgreSQL database;
+- event-ID duplicate protection;
+- SMS-provider calls, timeout, bulkhead, circuit-breaker, retry, and DLT behavior.
+
+This boundary means either service can be developed and deployed separately.
+Kafka is the durable handoff between them.
 
 ## Run with Docker Compose
 
@@ -143,8 +170,10 @@ docker compose up -d --build
 docker compose ps
 ```
 
-The application is available at `http://localhost:8081`, including health at
-`/actuator/health` and Swagger UI at `/swagger-ui/index.html`.
+Order Engine is available at `http://localhost:8081`, including health at
+`/actuator/health` and Swagger UI at `/swagger-ui/index.html`. Notification
+Service health is available at `http://localhost:8082/actuator/health`. The
+local WireMock SMS-provider stub listens on `http://localhost:8089`.
 
 Stop application containers while preserving PostgreSQL data:
 
@@ -197,10 +226,18 @@ Compose PostgreSQL to a free host port such as `5433` and use that same port in
 `DB_URL`. The Compose application container can remain stopped while Maven
 runs tests; Maven starts its own Order Engine application instance.
 
-Run all tests:
+Run the Order Engine test suite:
 
 ```powershell
 mvn test
+```
+
+Run the independent Notification Service test suite:
+
+```powershell
+cd notification-service
+mvn test
+cd ..
 ```
 
 Run with the default in-memory repository:
@@ -280,16 +317,24 @@ src/main/java/com/vishesh/orderengine/
 |-- JpaOrderRepository.java                   # domain-to-JPA adapter
 |-- OrderEntity.java / OrderItemEntity.java   # Hibernate mappings
 `-- OrderEntityJpaRepository.java             # Spring Data JPA queries
+
+notification-service/
+|-- src/main/java/                            # Kafka consumer and SMS delivery code
+|-- src/main/resources/db/migration/          # Notification Service schema history
+`-- src/test/java/                            # Unit and Testcontainers integration tests
 ```
 
 ## Current scope and next steps
 
-This is a full-stack modular-monolith learning project, not a claim of a fully
-managed production service. It includes the React interface, Flyway migrations,
-Docker Compose, Redis cache aside, Kafka/outbox reliability patterns, JWT
-security, resilience controls, observability, Kubernetes manifests, and GitHub
-Actions CI. Remaining capstone work focuses on cloud architecture, performance
-and failure evidence, deployment choices, and final operational documentation.
+This is a full-stack learning project that began as a modular monolith and now
+extracts notification delivery into a separate service. It is not a claim of a
+fully managed production system. It includes the React interface, Flyway
+migrations, Docker Compose, Redis cache aside, Kafka/outbox reliability
+patterns, JWT security, resilience controls, observability, Kubernetes
+manifests, and GitHub Actions CI. The proposed AWS deployment documents how the
+same system maps to managed cloud services without requiring a paid deployment.
+Remaining capstone work focuses on performance and failure evidence, final
+operational polish, and interview-ready presentation.
 
 ## Kubernetes local learning environment
 
@@ -301,4 +346,7 @@ Compose.
 
 Machine-specific connection addresses and all secrets stay in ignored local
 files. See [the local Kubernetes guide](docs/kubernetes-local.md) for setup,
-verification, rolling update, rollback, and cleanup commands.
+verification, autoscaling, rolling update, rollback, and cleanup commands. See
+the [proposed AWS deployment architecture](docs/architecture/aws-deployment.md)
+for the production service mapping and its availability, security, and cost
+trade-offs.
